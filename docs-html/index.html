@@ -18,6 +18,7 @@
   <a href="ffmpeg_helper.html">ffmpeg_helper</a>
   <a href="util.html">util</a>
   <a href="banner.html">banner</a>
+  <a href="termux.html">termux</a>
 </nav>
 
 <main>
@@ -74,6 +75,10 @@
       <h3>util</h3>
       <p><code>formatDuration()</code> — format detik ke string human-readable.</p>
     </a>
+    <a class="card" href="termux.html">
+      <h3>Termux / Android</h3>
+      <p>Panduan build & jalankan di Android tanpa root via Termux.</p>
+    </a>
   </div>
 
   <h2>Quick Start</h2>
@@ -86,6 +91,13 @@ build\Release\video_flow_smooth.exe -i input.mp4 -o output.mp4 -m 2
 
 <span class="tok-com"># Slow-mo 4x dengan DIS optical flow (lebih cepat)</span>
 build\Release\video_flow_smooth.exe -i input.mp4 -o output.mp4 -m 4 --dis</code></pre>
+
+  <h3>Android (Termux)</h3>
+<pre><code>pkg install -y cmake clang make opencv ffmpeg
+chmod +x build-termux.sh && ./build-termux.sh
+
+video_flow_smooth -i ~/storage/downloads/in.mp4 \
+                  -o ~/storage/downloads/out.mp4 -m 2 --dis</code></pre>
 
   <h2>Alur Pemrosesan (4 Tahap)</h2>
   <table>

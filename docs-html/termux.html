@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Termux / Android — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+  <a href="banner.html">banner</a>
+  <a href="termux.html" class="active">termux</a>
+</nav>
+
+<main>
+  <h1>Termux / Android</h1>
+  <p class="lead">
+    Panduan menjalankan Video Flow Smooth di Android tanpa root, via
+    <a href="https://termux.dev" target="_blank">Termux</a>.
+  </p>
+
+  <div class="note">
+    <strong>Performa mobile:</strong> CPU Snapdragon/MediaTek modern
+    (<em>misalnya Snapdragon 8 Gen 2</em>) memproses ~2–5 fps untuk
+    video 1080p dengan <code>--dis</code>. Video 5 menit ≈ 20–30 menit proses.
+    Gunakan <code>--dis</code> dan hindari <code>-m 4</code> untuk hemat waktu.
+  </div>
+
+  <h2 id="prereq">Prasyarat</h2>
+  <ol>
+    <li>Install <strong>Termux</strong> dari <a href="https://f-droid.org/en/packages/com.termux/" target="_blank">F-Droid</a> (versi Play Store sudah usang).</li>
+    <li>Buka Termux, tunggu hingga prompt muncul.</li>
+  </ol>
+
+  <h2 id="storage">Setup Akses Storage</h2>
+  <p>Agar bisa baca/tulis ke folder <code>Downloads</code>, <code>DCIM</code>,
+     dsb. (lokasi <code>/sdcard/</code>):</p>
+<pre><code>termux-setup-storage</code></pre>
+  <p>Android akan menampilkan dialog izin — <strong>izinkan</strong>.</p>
+  <p>Setelah itu, folder-folder umum tersedia di <code>~/storage/</code>:</p>
+  <table>
+    <thead><tr><th>Path Termux</th><th>Lokasi Android</th></tr></thead>
+    <tbody>
+      <tr><td><code>~/storage/shared</code></td><td>/sdcard/</td></tr>
+      <tr><td><code>~/storage/downloads</code></td><td>Download</td></tr>
+      <tr><td><code>~/storage/dcim</code></td><td>DCIM (kamera)</td></tr>
+      <tr><td><code>~/storage/movies</code></td><td>Movies</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="deps">Install Dependencies</h2>
+<pre><code>pkg update -y
+pkg install -y cmake clang make opencv ffmpeg</code></pre>
+  <p>Ukuran ~500 MB. Install pertama kali bisa 5–15 menit tergantung koneksi.</p>
+
+  <h2 id="build">Build</h2>
+  <p>Script otomatis (install deps + storage + build):</p>
+<pre><code>cd ~/video-smoothing        <span class="tok-com"># folder project</span>
+chmod +x build-termux.sh
+./build-termux.sh</code></pre>
+  <p>Atau manual:</p>
+<pre><code>cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel</code></pre>
+  <p>Setelah selesai, binary ada di <code>build/video_flow_smooth</code>
+     dan (kalau script dipakai) juga di <code>$PREFIX/bin/video_flow_smooth</code>.</p>
+
+  <h2 id="run">Menjalankan</h2>
+  <p>Proses video dari folder Download:</p>
+<pre><code>video_flow_smooth \
+  -i ~/storage/downloads/input.mp4 \
+  -o ~/storage/downloads/output.mp4 \
+  -m 2 --dis</code></pre>
+
+  <p>Dari folder home (tanpa setup storage):</p>
+<pre><code>video_flow_smooth -i in.mp4 -o out.mp4 -m 2 --dis</code></pre>
+
+  <h2 id="tuning">Tuning untuk Mobile</h2>
+  <table>
+    <thead><tr><th>Situasi</th><th>Rekomendasi</th></tr></thead>
+    <tbody>
+      <tr><td>Default cepat</td>
+          <td><code>--dis</code> (wajib di mobile)</td></tr>
+      <tr><td>Mult 2 sudah cukup</td>
+          <td><code>-m 2</code>; hindari <code>-m 3</code>+</td></tr>
+      <tr><td>Hemat baterai</td>
+          <td><code>--no-occlusion --dis</code> (occlusion ~20% lebih lambat)</td></tr>
+      <tr><td>Kualitas lebih halus di gerakan cepat</td>
+          <td>Biarkan occlusion ON, tapi siap menunggu lebih lama</td></tr>
+      <tr><td>4K</td>
+          <td>Downscale dulu ke 1080p dengan FFmpeg:<br>
+              <code>ffmpeg -i in.mp4 -vf scale=1920:-2 small.mp4</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">
+    <strong>Out of Memory:</strong> memproses video 4K langsung di Termux
+    (>2 GB per frame buffer) biasanya menyebabkan OOM kill oleh Android.
+    Selalu downscale dulu.
+  </div>
+
+  <h2 id="run-bg">Jalankan di Background</h2>
+  <p>Supaya proses tetap hidup saat layar mati atau Termux di-background:</p>
+<pre><code><span class="tok-com"># Ambil wakelock (cegah Android sleep)</span>
+termux-wake-lock
+
+<span class="tok-com"># Jalankan proses</span>
+nohup video_flow_smooth -i in.mp4 -o out.mp4 -m 2 --dis \
+  > run.log 2>&1 &
+
+<span class="tok-com"># Pantau</span>
+tail -f run.log
+
+<span class="tok-com"># Setelah selesai, lepas wakelock</span>
+termux-wake-unlock</code></pre>
+
+  <h2 id="troubleshoot">Troubleshooting</h2>
+
+  <h3>Error <code>undefined symbol: _ZNSt3__1...</code> saat runtime</h3>
+  <p>ABI mismatch antara libc++ static (default clang) dan
+     <code>libc++_shared</code> (dipakai opencv pkg). Solusinya ada di
+     <code>CMakeLists.txt</code> yang sudah menambahkan
+     <code>target_link_libraries(video_flow_smooth PRIVATE c++_shared)</code>.</p>
+  <p>Kalau masih error, rebuild dari bersih:</p>
+<pre><code>rm -rf build
+./build-termux.sh --clean</code></pre>
+
+  <h3>Error <code>OpenCV not found</code></h3>
+  <p>Pastikan opencv benar-benar terpasang:</p>
+<pre><code>pkg install -y opencv
+ls $PREFIX/lib/cmake/opencv4/</code></pre>
+  <p>Kalau folder kosong, coba reinstall: <code>pkg reinstall opencv</code></p>
+
+  <h3>FFmpeg tidak ditemukan</h3>
+<pre><code>pkg install -y ffmpeg
+which ffmpeg
+# harusnya: /data/data/com.termux/files/usr/bin/ffmpeg</code></pre>
+
+  <h3>Proses berhenti sendiri saat layar mati</h3>
+  <p>Android membunuh proses background untuk hemat baterai.
+     Gunakan <code>termux-wake-lock</code> (lihat bagian
+     <a href="#run-bg">Jalankan di Background</a>) — bagian dari paket
+     <code>termux-api</code>:</p>
+<pre><code>pkg install -y termux-api</code></pre>
+
+  <h3>Baca file dari /sdcard gagal (permission denied)</h3>
+  <p>Jalankan <code>termux-setup-storage</code> dan izinkan dialog Android.
+     Beberapa ROM (MIUI, EMUI) butuh izin tambahan lewat Settings → Apps → Termux
+     → Permissions → Storage.</p>
+
+  <h3>Output.mp4 kosong / tidak bisa diputar</h3>
+  <p>Codec OpenCV Termux mungkin tidak support H.264 encode langsung.
+     Kode sudah fallback ke MJPG/AVI, tapi kalau tetap gagal:</p>
+<pre><code><span class="tok-com"># Pakai AVI (fallback otomatis)</span>
+video_flow_smooth -i in.mp4 -o out.avi -m 2 --dis
+
+<span class="tok-com"># Lalu remux ke MP4 dengan ffmpeg</span>
+ffmpeg -i out.avi -c:v libx264 -crf 18 -pix_fmt yuv420p out.mp4</code></pre>
+
+  <h2 id="perf">Ekspektasi Performa</h2>
+  <table>
+    <thead><tr><th>Perangkat</th><th>1080p + --dis</th><th>720p + --dis</th></tr></thead>
+    <tbody>
+      <tr><td>Snapdragon 8 Gen 2/3</td><td>~3–5 fps</td><td>~6–9 fps</td></tr>
+      <tr><td>Snapdragon 7xx</td><td>~1.5–2 fps</td><td>~3–4 fps</td></tr>
+      <tr><td>Snapdragon 6xx</td><td>~0.8–1.2 fps</td><td>~1.5–2.5 fps</td></tr>
+      <tr><td>MediaTek Helio G8x</td><td>~1–1.5 fps</td><td>~2–3 fps</td></tr>
+    </tbody>
+  </table>
+  <p>Dengan <code>Farneback</code> (default), sekitar <strong>3–5× lebih lambat</strong>.
+     Untuk video 5 menit (9000 frame di 30 fps → 30 menit proses pada 5 fps),
+     sebaiknya potong dulu dengan FFmpeg atau proses sambil tidur.</p>
+
+  <h2>Dependency &amp; Penggunaan</h2>
+  <div class="links">
+    <a href="index.html">Overview</a>
+    <a href="ffmpeg_helper.html#isAvailable">ffmpeg::isAvailable</a>
+    <span>→ cross-platform, cek <code>ffmpeg -version</code> di PATH</span>
+  </div>
+</main>
+
+<footer>Video Flow Smooth — Termux / Android</footer>
+</body>
+</html>
