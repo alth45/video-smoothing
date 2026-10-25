@@ -1,0 +1,183 @@
+#include "pipeline.hpp"
+#include "ffmpeg_helper.hpp"
+#include "flow_interpolator.hpp"
+#include "scene_detector.hpp"
+#include "util.hpp"
+
+#include <opencv2/opencv.hpp>
+#include <iostream>
+#include <filesystem>
+#include <chrono>
+#include <algorithm>
+#include <cstdio>
+
+using namespace cv;
+using namespace std;
+namespace fs = std::filesystem;
+
+VideoSmoothingPipeline::VideoSmoothingPipeline(const PipelineOptions& opts)
+    : opts_(opts) {}
+
+int VideoSmoothingPipeline::run() {
+    const auto& in  = opts_.input;
+    const auto& out = opts_.output;
+    const int   mult = opts_.mult;
+
+    // ---- cek ffmpeg ----
+    bool haveFFmpeg = ffmpeg::isAvailable();
+    if (!haveFFmpeg) {
+        cerr << "WARNING: ffmpeg tidak ditemukan di PATH.\n"
+             << "         Audio TIDAK akan disertakan.\n\n";
+    }
+
+    fs::create_directories("audio");
+    fs::create_directories("temp");
+
+    string stem      = fs::path(in).stem().string();
+    string audioFile = "audio/" + stem + "_audio.m4a";
+    string tempVideo = "temp/"  + stem + "_intermediate.mp4";
+
+    // ================= [1/4] Ekstrak audio =================
+    bool haveAudio = false;
+    if (opts_.skipAudio) {
+        cout << "[1/4] Audio: dilewati (--no-audio)\n";
+    } else if (haveFFmpeg) {
+        cout << "[1/4] Ekstrak audio ke folder audio/...\n";
+        ffmpeg::AudioStatus as = ffmpeg::extractAudio(in, audioFile);
+        if (as == ffmpeg::AudioStatus::Failed) {
+            try { fs::remove(audioFile); } catch (...) {}
+            try { fs::remove(tempVideo); } catch (...) {}
+            return 1;
+        }
+        haveAudio = (as == ffmpeg::AudioStatus::OK);
+        if (haveAudio) cout << "     -> Audio disimpan: " << audioFile << "\n";
+        else           cout << "     -> Tidak ada audio di input, skip.\n";
+    } else {
+        cout << "[1/4] Skip ekstrak audio (ffmpeg tidak tersedia)\n";
+    }
+
+    // ================= [2/4] Proses video =================
+    cout << "[2/4] Proses frame interpolation...\n";
+
+    VideoCapture cap(in);
+    if (!cap.isOpened()) { cerr << "Tidak bisa buka: " << in << "\n"; return 1; }
+
+    int    W   = (int)cap.get(CAP_PROP_FRAME_WIDTH);
+    int    H   = (int)cap.get(CAP_PROP_FRAME_HEIGHT);
+    double fps = cap.get(CAP_PROP_FPS);
+    if (fps <= 0) fps = 30.0;
+
+    cout << "     Input: " << W << "x" << H << " @ " << fps
+         << " fps -> Output: " << fps * mult << " fps\n";
+    if (opts_.sceneDetect)
+        cout << "     Scene detection: ON (threshold=" << opts_.sceneThresh << ")\n";
+    else
+        cout << "     Scene detection: OFF\n";
+
+    int fourcc = VideoWriter::fourcc('m', 'p', '4', 'v');
+    VideoWriter writer(tempVideo, fourcc, fps * mult, Size(W, H));
+    if (!writer.isOpened()) {
+        tempVideo = "temp/" + stem + "_intermediate.avi";
+        fourcc = VideoWriter::fourcc('M', 'J', 'P', 'G');
+        writer.open(tempVideo, fourcc, fps * mult, Size(W, H));
+    }
+    if (!writer.isOpened()) { cerr << "Gagal buka VideoWriter\n"; return 1; }
+
+    FlowInterpolator interp(mult, 1.5f, opts_.useFarneback);
+
+    Mat prev, next;
+    if (!cap.read(prev)) { cerr << "Video kosong\n"; return 1; }
+
+    long frames = 1, written = 0, sceneCuts = 0;
+
+    double totalFrames = cap.get(CAP_PROP_FRAME_COUNT);
+    bool   haveTotal   = totalFrames > 1.0;
+    auto   procStart   = chrono::steady_clock::now();
+    bool   reprintBar  = false;
+
+    while (cap.read(next)) {
+        double corr = opts_.sceneDetect ? sceneDiff(prev, next) : 1.0;
+        bool   cut  = opts_.sceneDetect && (corr < opts_.sceneThresh);
+
+        if (cut) {
+            sceneCuts++;
+            printf("\r%*s\r", 78, "");
+            printf("     [scene cut @ frame %ld, corr=%.3f]\n", frames, corr);
+            reprintBar = true;
+            for (int i = 0; i < mult; ++i) { writer.write(prev); written++; }
+        } else {
+            auto outFrames = interp.processPair(prev, next);
+            for (const auto& f : outFrames) { writer.write(f); written++; }
+        }
+
+        prev = next.clone();
+        frames++;
+
+        if (frames % 10 == 0 || reprintBar) {
+            reprintBar = false;
+            double elapsed = chrono::duration<double>(
+                chrono::steady_clock::now() - procStart).count();
+            double procFps = (elapsed > 0.01) ? frames / elapsed : 0.0;
+
+            if (haveTotal && frames > 10) {
+                double pct = std::min(100.0, 100.0 * frames / totalFrames);
+                double eta = (frames < totalFrames)
+                           ? (elapsed / frames) * (totalFrames - frames) : 0.0;
+                printf("\r     [%5.1f%%] %ld/%ld | %5.1f fps proses | ETA %s   ",
+                       pct, frames, (long)totalFrames, procFps,
+                       formatDuration(eta).c_str());
+            } else {
+                printf("\r     frame %ld | %5.1f fps proses   ", frames, procFps);
+            }
+            fflush(stdout);
+        }
+    }
+    writer.write(prev); written++;
+
+    double totalElapsed = chrono::duration<double>(
+        chrono::steady_clock::now() - procStart).count();
+    printf("\r%*s\r", 78, "");
+    printf("     100%% — %ld frame diproses dalam %s (%.1f fps rata-rata)\n",
+           frames, formatDuration(totalElapsed).c_str(),
+           frames / std::max(totalElapsed, 0.001));
+
+    writer.release();
+    cout << "\n";
+
+    // ================= [3/4] Gabung audio =================
+    cout << "[3/4] Gabung audio ke video...\n";
+    bool finalOK = false;
+    if (haveFFmpeg && haveAudio) {
+        finalOK = ffmpeg::muxAudio(tempVideo, audioFile, out);
+        if (!finalOK) {
+            cerr << "     Gagal mux audio, fallback ke video tanpa audio.\n";
+            finalOK = ffmpeg::remuxVideoOnly(tempVideo, out);
+        }
+    } else if (haveFFmpeg) {
+        finalOK = ffmpeg::remuxVideoOnly(tempVideo, out);
+    } else {
+        try {
+            fs::copy_file(tempVideo, out, fs::copy_options::overwrite_existing);
+            finalOK = true;
+        } catch (...) { finalOK = false; }
+    }
+    if (!finalOK) { cerr << "Gagal menghasilkan output final.\n"; return 1; }
+    try { fs::remove(tempVideo); } catch (...) {}
+
+    // ================= [4/4] Info =================
+    cout << "\n[4/4] ============ SELESAI ============\n";
+    cout << "     Input frame  : " << frames     << "\n";
+    cout << "     Output frame : " << written    << "\n";
+    cout << "     FPS          : " << (fps * mult) << "\n";
+    if (opts_.sceneDetect)
+        cout << "     Scene cuts   : " << sceneCuts << " terdeteksi\n";
+    else
+        cout << "     Scene cuts   : detection dimatikan\n";
+    cout << "     Waktu proses : " << formatDuration(totalElapsed)
+         << " (" << (frames / std::max(totalElapsed, 0.001)) << " fps rata-rata)\n";
+    if (haveAudio) cout << "     Audio        : disertakan (" << audioFile << ")\n";
+    else           cout << "     Audio        : tidak ada\n";
+    cout << "     File output  : " << out << "\n";
+    cout << "======================================\n";
+    return 0;
+}
