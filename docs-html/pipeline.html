@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>pipeline — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html" class="active">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+</nav>
+
+<main>
+  <h1>pipeline</h1>
+  <p class="lead">
+    Orkestrasi seluruh proses: ekstrak audio → frame interpolation → mux audio →
+    summary. Modul ini yang memutuskan urutan, membuka/menutup resource, dan
+    melaporkan error ke user.
+  </p>
+
+  <h2 id="PipelineOptions">PipelineOptions <span class="badge cls">struct</span></h2>
+  <p>Konfigurasi lengkap satu run, diisi oleh <a href="main.html#main">main()</a>.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Default</th><th>Deskripsi</th></tr></thead>
+    <tbody>
+      <tr><td><code>input</code></td><td>"input.mp4"</td><td>File input</td></tr>
+      <tr><td><code>output</code></td><td>"output.mp4"</td><td>File output final</td></tr>
+      <tr><td><code>mult</code></td><td>2</td><td>Multiplier fps</td></tr>
+      <tr><td><code>useFarneback</code></td><td>true</td><td><code>false</code> = pakai DIS</td></tr>
+      <tr><td><code>sceneDetect</code></td><td>true</td><td>Aktifkan <a href="scene_detector.html#sceneDiff">sceneDiff</a></td></tr>
+      <tr><td><code>sceneThresh</code></td><td>0.4</td><td>Ambang korelasi histogram</td></tr>
+      <tr><td><code>useOcclusion</code></td><td>true</td><td>Aktifkan occlusion mask</td></tr>
+      <tr><td><code>occlusionThresh</code></td><td>2.0f</td><td>FB-consistency threshold (piksel)</td></tr>
+      <tr><td><code>skipAudio</code></td><td>false</td><td>Skip audio sepenuhnya</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="VideoSmoothingPipeline">VideoSmoothingPipeline <span class="badge cls">class</span></h2>
+  <div class="signature">VideoSmoothingPipeline(const PipelineOptions& opts)</div>
+  <p>Menyimpan copy <code>PipelineOptions</code> dan menyediakan entry point <a href="#run"><code>run()</code></a>.</p>
+
+  <h3 id="run">run() <span class="badge fn">method</span></h3>
+  <div class="signature">int run()  // 0 = sukses, 1 = gagal</div>
+
+  <p>Melakukan 4 tahap berurutan. Kalau ada tahap gagal, langsung return 1 tanpa lanjut.</p>
+
+  <h4>Tahap 1 — Ekstrak audio</h4>
+  <ol>
+    <li>Cek <a href="ffmpeg_helper.html#isAvailable">ffmpeg::isAvailable</a>. Kalau tidak ada → warning, lanjut tanpa audio.</li>
+    <li>Kalau <code>skipAudio</code> → skip tahap ini.</li>
+    <li>Panggil <a href="ffmpeg_helper.html#extractAudio">ffmpeg::extractAudio</a>.
+        Kalau hasilnya <code>Failed</code> → bersihkan file setengah jadi dan return 1.</li>
+  </ol>
+
+  <h4>Tahap 2 — Frame interpolation</h4>
+  <ol>
+    <li>Buka <code>VideoCapture</code>. Baca <code>fps</code>, <code>W</code>, <code>H</code>.</li>
+    <li>Buka <code>VideoWriter</code> ke file temp (mp4v, fallback MJPG <code>.avi</code>).</li>
+    <li>Buat <a href="flow_interpolator.html#FlowInterpolator">FlowInterpolator</a> dengan parameter dari options.</li>
+    <li>Loop tiap pasangan frame:
+      <ul>
+        <li>Kalau <code>sceneDetect</code> aktif, panggil <a href="scene_detector.html#sceneDiff">sceneDiff</a>.
+            Kalau <code>corr &lt; sceneThresh</code> → <strong>duplikasi prev</strong>
+            sebanyak <code>mult</code> (tanpa interpolasi).</li>
+        <li>Kalau tidak cut → <a href="flow_interpolator.html#processPair">FlowInterpolator::processPair</a>,
+            tulis semua frame hasil.</li>
+        <li>Update progress bar tiap 10 frame.</li>
+      </ul>
+    </li>
+    <li>Setelah loop, tulis frame terakhir sekali lagi (supaya durasi pas).</li>
+  </ol>
+
+  <h4>Tahap 3 — Mux audio</h4>
+  <ol>
+    <li>Kalau ada audio + ffmpeg: <a href="ffmpeg_helper.html#muxAudio">ffmpeg::muxAudio</a>.</li>
+    <li>Kalau gagal mux (tapi video OK): fallback <a href="ffmpeg_helper.html#remuxVideoOnly">ffmpeg::remuxVideoOnly</a>.</li>
+    <li>Kalau tidak ada ffmpeg sama sekali: <code>fs::copy_file</code> langsung.</li>
+    <li>Hapus file intermediate.</li>
+  </ol>
+
+  <h4>Tahap 4 — Summary</h4>
+  <p>Cetak ke stdout: input frame, output frame, fps, jumlah scene cut,
+     rata-rata occlusion %, waktu proses (pakai <a href="util.html#formatDuration">formatDuration</a>),
+     status audio, path file output.</p>
+
+  <h3 id="processVideo">processVideo() <span class="badge fn">method</span> <em>(private)</em></h3>
+  <div class="signature">int processVideo(const std::string& tempVideo)</div>
+  <p>Placeholder untuk pemisahan loop video bila refactor lebih lanjut diperlukan. Saat ini isi loop ada di <a href="#run">run()</a>.</p>
+
+  <h2>Dependency</h2>
+  <div class="links">
+    <a href="flow_interpolator.html">flow_interpolator</a>
+    <a href="scene_detector.html">scene_detector</a>
+    <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+    <a href="util.html">util</a>
+    <a href="main.html#main">main()</a>
+  </div>
+
+  <h2>Nilai yang dilaporkan</h2>
+  <table>
+    <thead><tr><th>Variabel</th><th>Sumber</th></tr></thead>
+    <tbody>
+      <tr><td><code>frames</code></td><td>Jumlah frame input (loop counter)</td></tr>
+      <tr><td><code>written</code></td><td>Jumlah frame yang ditulis ke writer</td></tr>
+      <tr><td><code>sceneCuts</code></td><td>Berapa kali <a href="scene_detector.html#sceneDiff">sceneDiff</a> &lt; thresh</td></tr>
+      <tr><td><code>occlusionRatioSum</code></td><td>Akumulasi <a href="flow_interpolator.html#lastOcclusionRatio">lastOcclusionRatio()</a></td></tr>
+      <tr><td><code>totalElapsed</code></td><td>Durasi tahap 2 (chrono)</td></tr>
+    </tbody>
+  </table>
+</main>
+
+<footer>Video Flow Smooth — pipeline</footer>
+</body>
+</html>

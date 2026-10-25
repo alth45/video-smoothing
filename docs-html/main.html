@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>main.cpp — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html" class="active">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+</nav>
+
+<main>
+  <h1>main.cpp</h1>
+  <p class="lead">
+    Entry point program. Tugasnya hanya dua: <strong>parse CLI</strong> lalu
+    <strong>delegasikan ke pipeline</strong>. Tidak ada logika pemrosesan di sini.
+  </p>
+
+  <h2 id="main">main() <span class="badge fn">function</span></h2>
+  <div class="signature">int main(int argc, char** argv)</div>
+
+  <p>Alur internal:</p>
+  <ol>
+    <li>Inisialisasi <a href="pipeline.html#PipelineOptions">PipelineOptions</a> dengan nilai default.</li>
+    <li>Loop semua argumen CLI, isi field <code>PipelineOptions</code> sesuai flag.</li>
+    <li>Validasi: <code>mult ≥ 2</code>, <code>sceneThresh ∈ [0,1]</code>, <code>occlusionThresh ∈ [0.1,10]</code>.</li>
+    <li>Validasi: <code>output ≠ input</code> (pakai <code>std::filesystem::absolute</code>).</li>
+    <li>Bangun <a href="pipeline.html#VideoSmoothingPipeline">VideoSmoothingPipeline</a>, panggil <a href="pipeline.html#run">run()</a>, kembalikan exit code-nya.</li>
+  </ol>
+
+  <h3>Exit code</h3>
+  <table>
+    <thead><tr><th>Code</th><th>Arti</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>Sukses</td></tr>
+      <tr><td><code>1</code></td><td>Argumen tidak valid / pipeline gagal</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="printHelp">printHelp() <span class="badge fn">function</span></h3>
+  <div class="signature">static void printHelp(const char* argv0)</div>
+  <p>Mencetak help text saat dipanggil dengan <code>-h</code> atau <code>--help</code>.</p>
+
+  <h2>Flag CLI yang didukung</h2>
+  <table>
+    <thead><tr><th>Flag</th><th>Field <code>PipelineOptions</code></th><th>Nilai</th></tr></thead>
+    <tbody>
+      <tr><td><code>-i &lt;path&gt;</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>input</code></a></td>
+          <td>string</td></tr>
+      <tr><td><code>-o &lt;path&gt;</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>output</code></a></td>
+          <td>string</td></tr>
+      <tr><td><code>-m &lt;n&gt;</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>mult</code></a></td>
+          <td>int ≥ 2</td></tr>
+      <tr><td><code>-s &lt;thresh&gt;</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>sceneThresh</code></a></td>
+          <td>double 0–1</td></tr>
+      <tr><td><code>--dis</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>useFarneback</code></a></td>
+          <td>false</td></tr>
+      <tr><td><code>--no-scene</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>sceneDetect</code></a></td>
+          <td>false</td></tr>
+      <tr><td><code>--no-occlusion</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>useOcclusion</code></a></td>
+          <td>false</td></tr>
+      <tr><td><code>--occ-thresh &lt;px&gt;</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>occlusionThresh</code></a></td>
+          <td>float 0.1–10</td></tr>
+      <tr><td><code>--no-audio</code></td>
+          <td><a href="pipeline.html#PipelineOptions"><code>skipAudio</code></a></td>
+          <td>true</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Dependency</h2>
+  <div class="links">
+    <a href="pipeline.html">pipeline.hpp</a>
+    <a href="pipeline.html#PipelineOptions">PipelineOptions</a>
+    <a href="pipeline.html#VideoSmoothingPipeline">VideoSmoothingPipeline</a>
+    <a href="pipeline.html#run">run()</a>
+  </div>
+</main>
+
+<footer>Video Flow Smooth — main.cpp</footer>
+</body>
+</html>

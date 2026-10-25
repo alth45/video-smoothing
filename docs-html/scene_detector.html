@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>scene_detector — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html" class="active">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+</nav>
+
+<main>
+  <h1>scene_detector</h1>
+  <p class="lead">
+    Deteksi pergantian scene (cut) dengan menghitung korelasi histogram
+    grayscale antar dua frame berurutan. Digunakan untuk mencegah
+    optical flow mencoba menginterpolasi antara dua shot yang tidak berhubungan.
+  </p>
+
+  <h2 id="sceneDiff">sceneDiff() <span class="badge fn">function</span></h2>
+  <div class="signature">double sceneDiff(const cv::Mat& a, const cv::Mat& b)</div>
+
+  <p>Menghitung korelasi histogram 64-bin dari dua frame.</p>
+
+  <h3>Parameter</h3>
+  <table>
+    <thead><tr><th>Param</th><th>Tipe</th><th>Deskripsi</th></tr></thead>
+    <tbody>
+      <tr><td><code>a</code></td><td><code>cv::Mat</code></td><td>Frame sebelumnya (BGR)</td></tr>
+      <tr><td><code>b</code></td><td><code>cv::Mat</code></td><td>Frame berikutnya (BGR)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Return</h3>
+  <p>
+    Nilai korelasi <code>[−1, 1]</code>. Semakin tinggi = distribusi intensitas
+    makin mirip. Threshold di <a href="pipeline.html#PipelineOptions">PipelineOptions.sceneThresh</a>
+    (default <code>0.4</code>) memisahkan "same scene" vs "cut".
+  </p>
+
+  <h3>Interpretasi nilai</h3>
+  <table>
+    <thead><tr><th>Nilai</th><th>Arti</th><th>Aksi pipeline</th></tr></thead>
+    <tbody>
+      <tr><td><code>&gt; 0.7</code></td><td>Hampir sama (frame diam)</td><td>Interpolasi normal</td></tr>
+      <tr><td><code>0.4 – 0.7</code></td><td>Same scene, gerakan aktif</td><td>Interpolasi normal</td></tr>
+      <tr><td><code>0.2 – 0.4</code></td><td>Kemungkinan transisi/fade</td><td>Tergantung threshold</td></tr>
+      <tr><td><code>&lt; 0.2</code></td><td>Cut / shot baru</td><td>Duplikasi prev (skip interpolasi)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Algoritma</h3>
+<pre><code><span class="tok-com">// 1. Konversi ke grayscale</span>
+gray_a = cvtColor(a, BGR2GRAY)
+gray_b = cvtColor(b, BGR2GRAY)
+
+<span class="tok-com">// 2. Hitung histogram 64-bin, range [0,256)</span>
+hist_a = calcHist(gray_a, 64 bins)
+hist_b = calcHist(gray_b, 64 bins)
+
+<span class="tok-com">// 3. Normalisasi L1 supaya total = 1 (probabilitas)</span>
+normalize(hist_a, NORM_L1)
+normalize(hist_b, NORM_L1)
+
+<span class="tok-com">// 4. Correlation</span>
+<span class="tok-kw">return</span> compareHist(hist_a, hist_b, HISTCMP_CORREL)</code></pre>
+
+  <h3>Mengapa histogram, bukan pixel-difference?</h3>
+  <table>
+    <thead><tr><th>Metode</th><th>Kelebihan</th><th>Kelemahan</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Mean absolute difference</td>
+        <td>Simpel</td>
+        <td>Sangat sensitif ke gerakan kamera/objek — false positive tinggi</td>
+      </tr>
+      <tr>
+        <td><strong>Histogram correlation</strong></td>
+        <td>Tahan terhadap translasi (warna tetap sama meski piksel geser), hanya berubah drastis saat cut</td>
+        <td>Tidak mendeteksi cut antara dua scene dengan palet warna sama</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Karena kita peduli gerakan (yang justru tidak ingin dianggap cut),
+    histogram correlation adalah trade-off yang tepat.
+  </p>
+
+  <h2>Dependency &amp; Penggunaan</h2>
+  <div class="links">
+    <a href="pipeline.html#run">pipeline.run</a>
+    <a href="pipeline.html#PipelineOptions">PipelineOptions.sceneThresh</a>
+    <a href="flow_interpolator.html#processPair">FlowInterpolator.processPair</a>
+  </div>
+
+  <h2>Tuning Threshold</h2>
+  <table>
+    <thead><tr><th>Video</th><th>Saran <code>-s</code></th></tr></thead>
+    <tbody>
+      <tr><td>Konten stabil (vlog, tutorial)</td><td><code>0.4</code> (default)</td></tr>
+      <tr><td>Banyak cut cepat</td><td><code>0.35</code></td></tr>
+      <tr><td>Ada fade in/out panjang</td><td><code>0.5</code></td></tr>
+      <tr><td>Anime / film warna serupa</td><td><code>0.3</code></td></tr>
+      <tr><td>Animasi warna solid</td><td><code>0.45</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong>Cara cek:</strong> jalankan dengan <code>--no-scene</code>, lihat di sekitar cut.
+    Kalau ada frame "hancur/dobel", aktifkan kembali dengan threshold lebih tinggi.
+  </div>
+</main>
+
+<footer>Video Flow Smooth — scene_detector</footer>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>flow_interpolator — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html" class="active">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+</nav>
+
+<main>
+  <h1>flow_interpolator</h1>
+  <p class="lead">
+    Inti teknis: menghitung <strong>dense optical flow</strong> dua arah,
+    membangun <strong>occlusion mask</strong> via forward-backward consistency,
+    lalu menghasilkan frame interpolasi dengan <strong>blending adaptif</strong>.
+  </p>
+
+  <h2 id="FlowInterpolator">FlowInterpolator <span class="badge cls">class</span></h2>
+  <div class="signature">FlowInterpolator(
+    int   mult            = 2,
+    float smoothSigma     = 1.5f,
+    bool  useFarneback    = true,
+    bool  useOcclusion    = true,
+    float occlusionThresh = 2.0f
+)</div>
+
+  <table>
+    <thead><tr><th>Parameter</th><th>Deskripsi</th></tr></thead>
+    <tbody>
+      <tr><td><code>mult</code></td><td>Jumlah frame per pasangan (prev + mult-1 interpolasi)</td></tr>
+      <tr><td><code>smoothSigma</code></td><td>σ Gaussian blur pada flow. 0 = tidak dihaluskan</td></tr>
+      <tr><td><code>useFarneback</code></td><td><code>true</code> = Farneback (halus), <code>false</code> = DIS (cepat)</td></tr>
+      <tr><td><code>useOcclusion</code></td><td>Aktifkan occlusion masking</td></tr>
+      <tr><td><code>occlusionThresh</code></td><td>Ambang magnitude FB-consistency (piksel). Makin kecil → makin banyak area dianggap occluded</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="processPair">processPair() <span class="badge fn">method</span></h3>
+  <div class="signature">std::vector&lt;cv::Mat&gt; processPair(const Mat& prev, const Mat& next)</div>
+  <p>Menghasilkan <code>mult</code> frame: <code>[prev, interp1, interp2, …, interp(mult-1)]</code>.</p>
+  <ol>
+    <li>Panggil <a href="#computeFlows">computeFlows</a> → dua flow (forward &amp; backward).</li>
+    <li>Kalau <code>smoothSigma &gt; 0</code>, blur kedua flow (Gaussian).</li>
+    <li>Kalau <code>useOcclusion</code>, bangun
+        <a href="#computeOcclusionMask">computeOcclusionMask</a> untuk kedua arah,
+        update <a href="#lastOcclusionRatio">lastOcclusionRatio_</a>.</li>
+    <li>Untuk <code>i = 1..mult-1</code>, panggil <a href="#interpAt">interpAt</a>.</li>
+  </ol>
+
+  <h3 id="computeFlows">computeFlows() <span class="badge fn">method</span> <em>(private)</em></h3>
+  <div class="signature">void computeFlows(const Mat& a, const Mat& b, Mat& f_ab, Mat& f_ba)</div>
+  <p>
+    Hitung flow dua arah. Konversi ke grayscale dulu untuk kecepatan.
+  </p>
+  <ul>
+    <li><code>useFarneback_ == true</code> → <code>calcOpticalFlowFarneback</code>
+        dengan param <code>(0.5, 5, 21, 3, 7, 1.5)</code>.</li>
+    <li><code>useFarneback_ == false</code> → <code>DISOpticalFlow</code> preset MEDIUM.</li>
+  </ul>
+  <p>
+    Output <code>f_ab</code>: flow dari frame A ke B. <code>f_ba</code>: sebaliknya.
+    Tipe <code>CV_32FC2</code> (per piksel: <code>Point2f</code> = displacement x,y).
+  </p>
+
+  <h3 id="warpWithFlow">warpWithFlow() <span class="badge fn">method</span> <em>(private)</em></h3>
+  <div class="signature">Mat warpWithFlow(const Mat& img, const Mat& flow, float scale)</div>
+  <p>
+    Warp image dengan <code>remap</code> menggunakan map:
+    <code>map(x,y) = (x - scale·flow_x, y - scale·flow_y)</code>.
+  </p>
+  <p>
+    <code>scale = t</code> → titik di frame A "bergeser" ke posisi pada waktu <code>t</code>.
+    <code>scale = 1-t</code> dengan flow backward → titik di frame B "bergeser mundur"
+    ke posisi yang sama pada waktu <code>t</code>.
+  </p>
+
+  <h3 id="warpMaskWithFlow">warpMaskWithFlow() <span class="badge fn">method</span> <em>(private)</em></h3>
+  <div class="signature">Mat warpMaskWithFlow(const Mat& mask, const Mat& flow, float scale)</div>
+  <p>
+    Sama seperti <a href="#warpWithFlow">warpWithFlow</a> tapi khusus untuk mask
+    <code>CV_8U</code>. Pakai <code>BORDER_CONSTANT 0</code> supaya piksel di luar
+    frame otomatis dianggap "tidak reliable".
+  </p>
+  <p>Interpolasi <code>INTER_LINEAR</code> membuat tepi mask soft (255 → 128 → 0),
+     sehingga blending di tepi tidak tajam.</p>
+
+  <h3 id="computeOcclusionMask">computeOcclusionMask() <span class="badge fn">method</span> <em>(private)</em></h3>
+  <div class="signature">Mat computeOcclusionMask(const Mat& f_ab, const Mat& f_ba, float thresh)</div>
+  <p>
+    <strong>Forward-backward consistency check</strong>. Untuk tiap pixel <code>(x,y)</code>:
+  </p>
+<pre><code>v     = f_ab(x, y)
+b     = f_ba( (x + v.x), (y + v.y) )   <span class="tok-com">// bilinear sample</span>
+error = |v + b|
+mask(x,y) = (error &lt; thresh) ? 255 : 0</code></pre>
+  <ul>
+    <li><code>error kecil</code> → flow konsisten (bukan occlusion) → reliable (255).</li>
+    <li><code>error besar</code> → titik "hilang" karena tertutup objek → unreliable (0).</li>
+    <li>Piksel di luar frame saat sampling → otomatis 0.</li>
+  </ul>
+
+  <h3 id="interpAt">interpAt() <span class="badge fn">method</span> <em>(private)</em></h3>
+  <div class="signature">Mat interpAt(const Mat& prev, const Mat& next,
+              const Mat& f_ab, const Mat& f_ba,
+              const Mat& maskPrev, const Mat& maskNext,
+              float t)</div>
+  <p>Menghasilkan satu frame interpolasi pada waktu <code>t ∈ (0,1)</code>.</p>
+
+  <h4>Mode tanpa occlusion (mask kosong)</h4>
+  <p>Sederhana: <code>result = (1-t)·warpPrev + t·warpNext</code>.</p>
+
+  <h4>Mode dengan occlusion (mask tidak kosong)</h4>
+  <ol>
+    <li>Warp kedua mask dengan <a href="#warpMaskWithFlow">warpMaskWithFlow</a>.</li>
+    <li>Konversi ke [0,1], beri epsilon <code>1e-3</code> (cegah weight 0 mutlak).</li>
+    <li>Weight dasar:
+      <ul>
+        <li><code>w_p = reliabilityPrev · (1-t)</code></li>
+        <li><code>w_n = reliabilityNext · t</code></li>
+      </ul>
+    </li>
+    <li>Normalisasi: <code>w_p / (w_p + w_n)</code> dst.</li>
+    <li>Blending per-pixel dengan weight 3-channel.</li>
+  </ol>
+  <p>
+    Efek: di area occluded (salah satu mask 0), weight frame itu ~0 →
+    hasilnya <strong>hanya dari frame yang reliable</strong>, bukan blend 50/50 yang
+    menghasilkan ghosting.
+  </p>
+
+  <h3 id="lastOcclusionRatio">lastOcclusionRatio() <span class="badge fn">method</span></h3>
+  <div class="signature">float lastOcclusionRatio() const</div>
+  <p>
+    Rata-rata % piksel yang dianggap occluded dari panggilan
+    <a href="#processPair">processPair</a> terakhir. Rentang 0.0–1.0.
+    Digunakan <a href="pipeline.html#run">pipeline.run</a> untuk statistik summary.
+  </p>
+  <div class="note">
+    <strong>Interpretasi:</strong> 2–8% = normal (gerakan moderat).
+    &gt; 20% = threshold mungkin terlalu ketat, naikkan <code>--occ-thresh</code>.
+  </div>
+
+  <h2>Rumus Matematis</h2>
+  <p>Untuk pixel <code>x</code> dan waktu <code>t</code>:</p>
+<pre><code>flow_ab(x)    = posisi_x_di_B - posisi_x_di_A
+flow_ba(x)    = posisi_x_di_A - posisi_x_di_B
+
+warp_A_t(x)   = A( x - t · flow_ab(x) )
+warp_B_t(x)   = B( x - (1-t) · flow_ba(x) )
+
+I_t(x)        = w_A(x)·warp_A_t(x) + w_B(x)·warp_B_t(x)
+
+w_A(x)        = reliability_A(x) · (1-t)
+w_B(x)        = reliability_B(x) · t</code></pre>
+
+  <h2>Dependency</h2>
+  <div class="links">
+    <a href="pipeline.html#run">pipeline.run</a>
+    <a href="pipeline.html#PipelineOptions">PipelineOptions</a>
+    <a href="scene_detector.html#sceneDiff">sceneDiff (paralel)</a>
+  </div>
+
+  <h2>Tuning</h2>
+  <table>
+    <thead><tr><th>Situasi</th><th>Saran</th></tr></thead>
+    <tbody>
+      <tr><td>Ghosting masih ada di tepi</td>
+          <td>Turunkan <code>--occ-thresh</code> (mis. 1.5)</td></tr>
+      <tr><td>Area "freeze"/kaku</td>
+          <td>Naikkan <code>--occ-thresh</code> (mis. 3.0)</td></tr>
+      <tr><td>Video 4K, gerakan piksel besar</td>
+          <td><code>--occ-thresh 3.0</code></td></tr>
+      <tr><td>Video low-res</td>
+          <td><code>--occ-thresh 1.0</code></td></tr>
+      <tr><td>Butuh proses lebih cepat</td>
+          <td><code>--dis --no-occlusion</code></td></tr>
+    </tbody>
+  </table>
+</main>
+
+<footer>Video Flow Smooth — flow_interpolator</footer>
+</body>
+</html>

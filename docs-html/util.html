@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>util — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html" class="active">util</a>
+</nav>
+
+<main>
+  <h1>util</h1>
+  <p class="lead">
+    Utilitas kecil yang tidak bergantung pada modul lain. Saat ini hanya satu
+    fungsi: format durasi.
+  </p>
+
+  <h2 id="formatDuration">formatDuration() <span class="badge fn">function</span></h2>
+  <div class="signature">std::string formatDuration(double sec)</div>
+
+  <p>Format detik ke string human-readable. Skema:</p>
+  <table>
+    <thead><tr><th>Range detik</th><th>Contoh output</th></tr></thead>
+    <tbody>
+      <tr><td>negatif / &gt; 1e9</td><td><code>"--"</code></td></tr>
+      <tr><td>&lt; 1.0</td><td><code>"&lt;1s"</code></td></tr>
+      <tr><td>1 – 59</td><td><code>"12s"</code>, <code>"45s"</code></td></tr>
+      <tr><td>60 – 3599</td><td><code>"3m 24s"</code></td></tr>
+      <tr><td>≥ 3600</td><td><code>"1h 05m"</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Contoh</h3>
+<pre><code>formatDuration(0.5)    <span class="tok-com">// "&lt;1s"</span>
+formatDuration(12.3)   <span class="tok-com">// "12s"</span>
+formatDuration(204.7)  <span class="tok-com">// "3m 24s"</span>
+formatDuration(3925)   <span class="tok-com">// "1h 05m"</span>
+formatDuration(-5)     <span class="tok-com">// "--"</span></code></pre>
+
+  <h2>Dependency &amp; Penggunaan</h2>
+  <p>Tidak bergantung ke modul lain. Dipakai oleh:</p>
+  <div class="links">
+    <a href="pipeline.html#run">pipeline.run</a>
+    <span>→ untuk cetak waktu proses &amp; ETA</span>
+  </div>
+
+  <div class="note">
+    <strong>Rencana ke depan:</strong> modul ini bisa menampung helper lain
+    seperti <code>formatBytes()</code>, <code>splitExtension()</code>,
+    <code>trimQuotes()</code>. Karena tidak ada dependency, aman untuk di-extend.
+  </div>
+</main>
+
+<footer>Video Flow Smooth — util</footer>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Flow Smooth — Dokumentasi</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html" class="active">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+</nav>
+
+<main>
+  <h1>Video Flow Smooth</h1>
+  <p class="lead">
+    Tool command-line C++ untuk menaikkan frame rate video dengan
+    <strong>optical flow frame interpolation</strong> — menghasilkan gerakan
+    jauh lebih halus, dilengkapi <em>scene-change detection</em>,
+    <em>occlusion masking</em>, dan pemrosesan audio otomatis via FFmpeg.
+  </p>
+
+  <h2>Arsitektur</h2>
+  <p>Setiap modul punya satu tanggung jawab. Panah = dependency.</p>
+
+<pre><code><span class="tok-com">// main.cpp — entry point + parsing CLI</span>
+       <span class="tok-kw">│</span>
+       <span class="tok-kw">▼</span>
+<span class="tok-type">PipelineOptions</span> + <span class="tok-type">VideoSmoothingPipeline</span>              <span class="tok-com">→ pipeline.html</span>
+       <span class="tok-kw">│</span>
+       <span class="tok-kw">▼</span>
+   orkestrasi: extract → process → mux → summary
+       <span class="tok-kw">│</span>
+       <span class="tok-kw">├──▶</span> <span class="tok-type">FlowInterpolator</span>              <span class="tok-com">→ flow_interpolator.html</span>
+       <span class="tok-kw">│</span>
+       <span class="tok-kw">├──▶</span> <span class="tok-fn">sceneDiff</span>()                    <span class="tok-com">→ scene_detector.html</span>
+       <span class="tok-kw">│</span>
+       <span class="tok-kw">├──▶</span> <span class="tok-kw">namespace</span> ffmpeg                <span class="tok-com">→ ffmpeg_helper.html</span>
+       <span class="tok-kw">│</span>
+       <span class="tok-kw">└──▶</span> <span class="tok-fn">formatDuration</span>()              <span class="tok-com">→ util.html</span></code></pre>
+
+  <h2>Modul</h2>
+  <div class="grid">
+    <a class="card" href="main.html">
+      <h3>main.cpp</h3>
+      <p>Entry point. Parsing argumen CLI, validasi, meneruskan ke pipeline.</p>
+    </a>
+    <a class="card" href="pipeline.html">
+      <h3>pipeline</h3>
+      <p><code>PipelineOptions</code> dan <code>VideoSmoothingPipeline</code> — orkestrasi 4 tahap.</p>
+    </a>
+    <a class="card" href="flow_interpolator.html">
+      <h3>flow_interpolator</h3>
+      <p><code>FlowInterpolator</code> — optical flow, occlusion mask, blending adaptif.</p>
+    </a>
+    <a class="card" href="scene_detector.html">
+      <h3>scene_detector</h3>
+      <p><code>sceneDiff()</code> — deteksi scene cut via histogram correlation.</p>
+    </a>
+    <a class="card" href="ffmpeg_helper.html">
+      <h3>ffmpeg_helper</h3>
+      <p>Wrapper FFmpeg: capture error, extract audio, mux, remux.</p>
+    </a>
+    <a class="card" href="util.html">
+      <h3>util</h3>
+      <p><code>formatDuration()</code> — format detik ke string human-readable.</p>
+    </a>
+  </div>
+
+  <h2>Quick Start</h2>
+<pre><code><span class="tok-com"># Build</span>
+cmake -B build -S . -G <span class="tok-str">"Visual Studio 17 2022"</span> -A x64 -DOpenCV_DIR=C:/opencv/build
+cmake --build build --config Release --parallel
+
+<span class="tok-com"># Jalankan: 30fps → 60fps</span>
+build\Release\video_flow_smooth.exe -i input.mp4 -o output.mp4 -m 2
+
+<span class="tok-com"># Slow-mo 4x dengan DIS optical flow (lebih cepat)</span>
+build\Release\video_flow_smooth.exe -i input.mp4 -o output.mp4 -m 4 --dis</code></pre>
+
+  <h2>Alur Pemrosesan (4 Tahap)</h2>
+  <table>
+    <thead><tr><th>Tahap</th><th>Aksi</th><th>Modul</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>1/4</strong></td>
+        <td>Probe &amp; ekstrak audio ke <code>audio/&lt;stem&gt;_audio.m4a</code></td>
+        <td><a href="ffmpeg_helper.html#extractAudio">ffmpeg::extractAudio</a></td>
+      </tr>
+      <tr>
+        <td><strong>2/4</strong></td>
+        <td>Frame interpolation loop + scene detection</td>
+        <td><a href="pipeline.html#run">pipeline.run</a>,
+            <a href="flow_interpolator.html#processPair">FlowInterpolator</a>,
+            <a href="scene_detector.html#sceneDiff">sceneDiff</a></td>
+      </tr>
+      <tr>
+        <td><strong>3/4</strong></td>
+        <td>Mux audio + video → output final</td>
+        <td><a href="ffmpeg_helper.html#muxAudio">ffmpeg::muxAudio</a></td>
+      </tr>
+      <tr>
+        <td><strong>4/4</strong></td>
+        <td>Tampilkan summary (frames, fps, waktu, occlusion %)</td>
+        <td><a href="util.html#formatDuration">formatDuration</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Parameter Utama</h2>
+  <table>
+    <thead><tr><th>Flag</th><th>Default</th><th>Deskripsi</th></tr></thead>
+    <tbody>
+      <tr><td><code>-i &lt;path&gt;</code></td><td>input.mp4</td><td>File input</td></tr>
+      <tr><td><code>-o &lt;path&gt;</code></td><td>output.mp4</td><td>File output</td></tr>
+      <tr><td><code>-m &lt;n&gt;</code></td><td>2</td><td>Multiplier fps (2, 3, 4, …)</td></tr>
+      <tr><td><code>-s &lt;thresh&gt;</code></td><td>0.4</td><td>Scene-change threshold</td></tr>
+      <tr><td><code>--dis</code></td><td>off</td><td>Pakai DIS optical flow</td></tr>
+      <tr><td><code>--no-scene</code></td><td>off</td><td>Matikan scene detection</td></tr>
+      <tr><td><code>--no-occlusion</code></td><td>off</td><td>Matikan occlusion masking</td></tr>
+      <tr><td><code>--occ-thresh &lt;px&gt;</code></td><td>2.0</td><td>Occlusion FB threshold</td></tr>
+      <tr><td><code>--no-audio</code></td><td>off</td><td>Skip audio</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong>Tips:</strong> kalau ada error FFmpeg saat ekstrak audio, jalankan
+    dengan <code>--no-audio</code> untuk proses video saja. Detail di
+    <a href="ffmpeg_helper.html#showFriendlyError">showFriendlyError</a>.
+  </div>
+</main>
+
+<footer>Video Flow Smooth — Dokumentasi kode · static HTML</footer>
+</body>
+</html>

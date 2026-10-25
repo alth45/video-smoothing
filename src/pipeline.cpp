@@ -73,6 +73,10 @@ int VideoSmoothingPipeline::run() {
         cout << "     Scene detection: ON (threshold=" << opts_.sceneThresh << ")\n";
     else
         cout << "     Scene detection: OFF\n";
+    if (opts_.useOcclusion)
+        cout << "     Occlusion    : ON (thresh=" << opts_.occlusionThresh << " px)\n";
+    else
+        cout << "     Occlusion    : OFF\n";
 
     int fourcc = VideoWriter::fourcc('m', 'p', '4', 'v');
     VideoWriter writer(tempVideo, fourcc, fps * mult, Size(W, H));
@@ -83,12 +87,17 @@ int VideoSmoothingPipeline::run() {
     }
     if (!writer.isOpened()) { cerr << "Gagal buka VideoWriter\n"; return 1; }
 
-    FlowInterpolator interp(mult, 1.5f, opts_.useFarneback);
+    FlowInterpolator interp(mult, 1.5f,
+                        opts_.useFarneback,
+                        opts_.useOcclusion,
+                        opts_.occlusionThresh);
 
     Mat prev, next;
     if (!cap.read(prev)) { cerr << "Video kosong\n"; return 1; }
 
     long frames = 1, written = 0, sceneCuts = 0;
+    double occlusionRatioSum = 0.0;
+    long   occlusionPairCount = 0;
 
     double totalFrames = cap.get(CAP_PROP_FRAME_COUNT);
     bool   haveTotal   = totalFrames > 1.0;
@@ -107,6 +116,8 @@ int VideoSmoothingPipeline::run() {
             for (int i = 0; i < mult; ++i) { writer.write(prev); written++; }
         } else {
             auto outFrames = interp.processPair(prev, next);
+            occlusionRatioSum += interp.lastOcclusionRatio();
+            occlusionPairCount++;
             for (const auto& f : outFrames) { writer.write(f); written++; }
         }
 
@@ -175,6 +186,14 @@ int VideoSmoothingPipeline::run() {
         cout << "     Scene cuts   : detection dimatikan\n";
     cout << "     Waktu proses : " << formatDuration(totalElapsed)
          << " (" << (frames / std::max(totalElapsed, 0.001)) << " fps rata-rata)\n";
+    if (opts_.useOcclusion) {
+        double avgOccl = (occlusionPairCount > 0)
+            ? 100.0 * occlusionRatioSum / occlusionPairCount : 0.0;
+        cout << "     Occlusion    : rata-rata " << fixed << setprecision(1)
+            << avgOccl << "% per frame\n" << defaultfloat;
+    } else {
+        cout << "     Occlusion    : detection dimatikan\n";
+    }
     if (haveAudio) cout << "     Audio        : disertakan (" << audioFile << ")\n";
     else           cout << "     Audio        : tidak ada\n";
     cout << "     File output  : " << out << "\n";

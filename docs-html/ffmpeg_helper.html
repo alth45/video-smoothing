@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>ffmpeg_helper — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html" class="active">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+</nav>
+
+<main>
+  <h1>ffmpeg_helper</h1>
+  <p class="lead">
+    Wrapper seluruh interaksi dengan executable FFmpeg/FFprobe. Menangkap
+    <strong>stdout</strong> (untuk ffprobe) dan <strong>stderr</strong> (untuk error),
+    lalu menampilkan error 1-baris + pesan ramah saat gagal.
+  </p>
+
+  <h2 id="CmdResult">CmdResult <span class="badge cls">struct</span></h2>
+  <table>
+    <thead><tr><th>Field</th><th>Tipe</th><th>Deskripsi</th></tr></thead>
+    <tbody>
+      <tr><td><code>ok</code></td><td>bool</td><td>exit 0 dan tidak ada pattern critical di stderr</td></tr>
+      <tr><td><code>exitCode</code></td><td>int</td><td>Exit code dari <code>system()</code></td></tr>
+      <tr><td><code>firstErrorLine</code></td><td>string</td><td>Baris stderr pertama yang meaningful (skip banner)</td></tr>
+      <tr><td><code>stdoutLines</code></td><td>vector&lt;string&gt;</td><td>Output stdout (digunakan untuk ffprobe)</td></tr>
+      <tr><td><code>stderrLines</code></td><td>vector&lt;string&gt;</td><td>Output stderr (deteksi error)</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="isAvailable">ffmpeg::isAvailable() <span class="badge fn">function</span></h2>
+  <div class="signature">bool isAvailable()</div>
+  <p>Test cepat apakah <code>ffmpeg</code> ada di PATH. Implementasi: jalankan
+     <code>ffmpeg -version</code>, cek exit code.</p>
+  <p>Dipanggil oleh <a href="pipeline.html#run">pipeline.run</a> di tahap 1.</p>
+
+  <h2 id="run">ffmpeg::run() <span class="badge fn">function</span></h2>
+  <div class="signature">CmdResult run(const std::string& cmd)</div>
+  <p>
+    Menjalankan command via <code>system()</code>, redirect stdout &amp; stderr ke
+    file temp, baca hasilnya, lalu hapus file temp. Mengembalikan
+    <a href="#CmdResult">CmdResult</a> yang terisi lengkap.
+  </p>
+  <p>
+    Deteksi error fatal pakai <code>hasCriticalFfmpegError</code> dengan pattern
+    seperti <code>"Error submitting packet"</code>, <code>"Invalid data found"</code>,
+    <code>"moov atom not found"</code>, dst.
+  </p>
+  <p>Dipanggil oleh semua fungsi lain di halaman ini.</p>
+
+  <h2 id="showFriendlyError">ffmpeg::showFriendlyError() <span class="badge fn">function</span></h2>
+  <div class="signature">void showFriendlyError(const CmdResult& r,
+                        const std::string& stageName,
+                        const std::string& inputFile)</div>
+  <p>Menampilkan:</p>
+  <ol>
+    <li><code>[!!] GAGAL: &lt;stageName&gt;</code></li>
+    <li><code>[ffmpeg] &lt;firstErrorLine&gt;</code> — 1 baris asli dari ffmpeg</li>
+    <li>Blok saran: cek VLC, update ffmpeg, atau <code>--no-audio</code></li>
+  </ol>
+  <p>Caller tinggal <code>return 1</code> setelah memanggil fungsi ini.</p>
+
+  <h2 id="extractAudio">ffmpeg::extractAudio() <span class="badge fn">function</span></h2>
+  <div class="signature">AudioStatus extractAudio(const std::string& video,
+                              const std::string& outAudio)</div>
+
+  <p>3 langkah:</p>
+  <ol>
+    <li><strong>Probe</strong> via ffprobe: cek stream audio ada/tidak.
+        Kalau exit code ≠ 0 → error fatal → <a href="#showFriendlyError">showFriendlyError</a>
+        → return <code>Failed</code>.</li>
+    <li>Kalau tidak ada stream audio (<code>codec_name</code> kosong / <code>N/A</code>)
+        → return <code>NoAudio</code> (normal, bukan error).</li>
+    <li><strong>Ekstrak</strong>: <code>ffmpeg -vn -c:a aac -b:a 192k</code>.
+        Kalau gagal → <code>Failed</code>. Sanity-check ukuran file ≥ 1024 byte.</li>
+  </ol>
+
+  <table>
+    <thead><tr><th>Return</th><th>Arti</th><th>Aksi pipeline</th></tr></thead>
+    <tbody>
+      <tr><td><code>OK</code></td><td>Audio berhasil diekstrak</td><td>Lanjut mux di akhir</td></tr>
+      <tr><td><code>NoAudio</code></td><td>File tidak punya audio</td><td>Lanjut tanpa audio</td></tr>
+      <tr><td><code>Failed</code></td><td>Audio korup / file rusak</td><td>Program stop (<code>return 1</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <p>Dipanggil oleh <a href="pipeline.html#run">pipeline.run</a> tahap 1.</p>
+
+  <h2 id="muxAudio">ffmpeg::muxAudio() <span class="badge fn">function</span></h2>
+  <div class="signature">bool muxAudio(const std::string& videoOnly,
+                const std::string& audioFile,
+                const std::string& finalOut)</div>
+  <p>
+    Gabung video + audio dengan re-encode H.264 (<code>-crf 18 -preset medium</code>)
+    dan <code>-shortest</code> supaya durasi pas. Re-encode diperlukan karena
+    intermediate dari OpenCV mungkin codec-nya tidak universal.
+  </p>
+  <p>Kalau gagal → tampilkan error → return <code>false</code>
+     (pipeline akan fallback ke <a href="#remuxVideoOnly">remuxVideoOnly</a>).</p>
+  <p>Dipanggil oleh <a href="pipeline.html#run">pipeline.run</a> tahap 3.</p>
+
+  <h2 id="remuxVideoOnly">ffmpeg::remuxVideoOnly() <span class="badge fn">function</span></h2>
+  <div class="signature">bool remuxVideoOnly(const std::string& videoOnly,
+                       const std::string& finalOut)</div>
+  <p>Stream copy (<code>-c copy</code>) tanpa decode/encode ulang. Cepat tapi
+     hanya bekerja kalau codec intermediate sudah universal.</p>
+  <p>Digunakan sebagai fallback saat <a href="#muxAudio">muxAudio</a> gagal,
+     atau saat file tidak punya audio.</p>
+
+  <h2>Pola Error Handling</h2>
+  <div class="ok">
+    <strong>Sukses:</strong> fungsi return nilai normal (<code>OK</code> / <code>true</code>),
+    pipeline lanjut.
+  </div>
+  <div class="warn">
+    <strong>Gagal fatal:</strong> tampilkan 1 baris error + saran → return
+    <code>Failed</code> / <code>false</code> → pipeline <code>return 1</code>.
+    <em>Tidak ada loop error panjang.</em>
+  </div>
+
+  <h2>Dependency &amp; Penggunaan</h2>
+  <div class="links">
+    <a href="pipeline.html#run">pipeline.run</a>
+    <a href="util.html#formatDuration">formatDuration (independen)</a>
+  </div>
+</main>
+
+<footer>Video Flow Smooth — ffmpeg_helper</footer>
+</body>
+</html>
