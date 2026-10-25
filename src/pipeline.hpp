@@ -15,6 +15,9 @@ struct PipelineOptions {
     bool        useOcclusion = true;    
     float       occlusionThresh = 2.0f; 
     bool        usePipe      = true;   
+    bool        useAI           = false;    
+    bool        aiAcknowledged  = false;                   
+    std::string rifeModelPath   = "models/rife.onnx";       
 };
 class VideoSmoothingPipeline {
 public:

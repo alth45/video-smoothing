@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "pipeline.hpp"
+#include "rife_interpolator.hpp"
 #include "ffmpeg_helper.hpp"
 #include "flow_interpolator.hpp"
 #include "scene_detector.hpp"
@@ -15,9 +16,73 @@
 #include <algorithm>
 #include <cstdio>
 
+#ifdef _WIN32
+  #include <io.h>
+  #include <cstdio>
+#else
+  #include <unistd.h>
+#endif
+
 using namespace cv;
 using namespace std;
 namespace fs = std::filesystem;
+
+
+// ==================================================================
+//  Konfirmasi penggunaan RIFE (EXPERIMENTAL — belum teruji)
+// ==================================================================
+static bool confirmExperimentalAi(bool ack) {
+    cout << "\n";
+    cout << "  ╔══════════════════════════════════════════════════════════╗\n";
+    cout << "  ║  ⚠  RIFE AI — KODE BELUM TERUJI (EXPERIMENTAL)           ║\n";
+    cout << "  ╠══════════════════════════════════════════════════════════╣\n";
+    cout << "  ║                                                          ║\n";
+    cout << "  ║  Fitur ini BELUM diuji oleh developer (tidak ada GPU).  ║\n";
+    cout << "  ║  Kualitas, stabilitas, dan performa TIDAK dijamin.      ║\n";
+    cout << "  ║                                                          ║\n";
+    cout << "  ║  Komponen yang BELUM TERUJI:                            ║\n";
+    cout << "  ║    • Forward pass model ONNX (variasi RIFE v4.x)        ║\n";
+    cout << "  ║    • Deteksi otomatis input layer model                 ║\n";
+    cout << "  ║    • Integrasi dengan pipe ffmpeg + audio mux           ║\n";
+    cout << "  ║    • Mode CUDA / GPU backend (belum ada hardware uji)   ║\n";
+    cout << "  ║    • Mode CPU-only (akurasi belum diverifikasi)         ║\n";
+    cout << "  ║    • Kompatibilitas OpenCV DNN (semua versi 4.x)        ║\n";
+    cout << "  ║                                                          ║\n";
+    cout << "  ║  Kalau bermasalah, laporkan dengan output lengkap.      ║\n";
+    cout << "  ║  Untuk mode stabil: jalankan tanpa --ai-experimental.   ║\n";
+    cout << "  ║                                                          ║\n";
+    cout << "  ╚══════════════════════════════════════════════════════════╝\n";
+    cout << "\n";
+
+    if (ack) {
+        cout << "  (--ai-ack: konfirmasi dilewati)\n\n";
+        return true;
+    }
+
+#ifdef _WIN32
+    bool interactive = _isatty(_fileno(stdin));
+#else
+    bool interactive = isatty(STDIN_FILENO);
+#endif
+
+    if (!interactive) {
+        cerr << "  [!!] Tidak bisa meminta konfirmasi (stdin bukan terminal).\n"
+             << "       Untuk scripting / Termux, tambahkan --ai-ack:\n"
+             << "         video_flow_smooth -i in.mp4 -o out.mp4 --ai-experimental --ai-ack\n\n";
+        return false;
+    }
+
+    cout << "  Ketik 'yes' untuk melanjutkan, atau apa pun untuk batal: ";
+    string ans;
+    getline(cin, ans);
+
+    if (ans != "yes") {
+        cout << "\n  Dibatalkan oleh user.\n\n";
+        return false;
+    }
+    cout << "\n";
+    return true;
+}
 
 VideoSmoothingPipeline::VideoSmoothingPipeline(const PipelineOptions& opts)
     : opts_(opts) {}
@@ -26,6 +91,11 @@ int VideoSmoothingPipeline::run() {
     const auto& in  = opts_.input;
     const auto& out = opts_.output;
     const int   mult = opts_.mult;
+    if(opts_.useAI){
+        if (!confirmExperimentalAi(opts_.aiAcknowledged)) {
+            return 1;
+        }
+    }
 
     // ---- cek ffmpeg ----
     bool haveFFmpeg = ffmpeg::isAvailable();
@@ -130,10 +200,31 @@ int VideoSmoothingPipeline::run() {
         if (!fileWriter.isOpened()) { cerr << "Gagal buka VideoWriter\n"; return 1; }
     }
 
-    FlowInterpolator interp(mult, 1.5f,
-                            opts_.useFarneback,
-                            opts_.useOcclusion,
-                            opts_.occlusionThresh);
+    unique_ptr<IInterpolator> interp;
+
+    if (opts_.useAI) {
+        cout << "     Interpolator : RIFE (AI)  [⚠ EXPERIMENTAL — BELUM TERUJI]\n";
+        cout << "     Model        : " << opts_.rifeModelPath << "\n";
+
+        auto rife = make_unique<RifeInterpolator>(opts_.rifeModelPath, mult);
+        if (!rife->isReady()) {
+            cerr << "\n  [!!] Gagal memuat model RIFE.\n";
+            cerr << "  [rife] " << rife->error() << "\n\n";
+            cerr << "  Solusi:\n";
+            cerr << "    1. Download / export model RIFE:\n";
+            cerr << "         ./download-rife.sh\n";
+            cerr << "    2. Atau tentukan path manual dengan --rife-model <path>\n";
+            cerr << "    3. Atau jalankan tanpa --ai untuk memakai Farneback/DIS\n\n";
+            return 1;
+        }
+        interp = move(rife);
+    } else {
+        interp = make_unique<FlowInterpolator>(
+            mult, 1.5f,
+            opts_.useFarneback,
+            opts_.useOcclusion,
+            opts_.occlusionThresh);
+    }
 
     // Lambda dispatcher: tulis frame ke pipe ATAU file
     auto emitFrame = [&](const Mat& f) -> bool {
@@ -174,9 +265,9 @@ int VideoSmoothingPipeline::run() {
                 written++;
             }
         } else {
-            auto outFrames = interp.processPair(prev, next);
+            auto outFrames = interp->processPair(prev, next);
             if (opts_.useOcclusion) {
-                occlusionRatioSum += interp.lastOcclusionRatio();
+                occlusionRatioSum += interp->lastOcclusionRatio();
                 occlusionPairCount++;
             }
             for (const auto& f : outFrames) {
@@ -274,9 +365,9 @@ int VideoSmoothingPipeline::run() {
     cout << "     Output frame : " << written    << "\n";
     cout << "     FPS          : " << (fps * mult) << "\n";
     if (opts_.sceneDetect)
-        cout << "     Scene cuts   : " << sceneCuts << " terdeteksi\n";
+        cout << "     Occlusion    : ON (thresh=" << opts_.occlusionThresh << " px)\n";
     else
-        cout << "     Scene cuts   : detection dimatikan\n";
+        cout << "     Occlusion    : OFF\n";
     if (opts_.useOcclusion) {
         double avgOccl = (occlusionPairCount > 0)
             ? 100.0 * occlusionRatioSum / occlusionPairCount : 0.0;
@@ -289,6 +380,8 @@ int VideoSmoothingPipeline::run() {
          << (usingPipe ? "single-pass (pipe ffmpeg)"
                        : "two-pass (VideoWriter + ffmpeg mux)")
          << "\n";
+    cout << "     Interpolator : " << interp->name()
+     << (opts_.useAI ? "  [⚠ EXPERIMENTAL]" : "") << "\n";
     cout << "     Waktu proses : " << formatDuration(totalElapsed)
          << " (" << (frames / std::max(totalElapsed, 0.001)) << " fps rata-rata)\n";
     if (haveAudio) cout << "     Audio        : disertakan (" << audioFile << ")\n";

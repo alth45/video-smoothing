@@ -24,7 +24,9 @@ find_package(Threads REQUIRED)
 add_executable(video_flow_smooth
     src/main.cpp
     src/pipeline.cpp
+    src/interpolator.hpp            # header-only, tidak wajib tapi rapi
     src/flow_interpolator.cpp
+    src/rife_interpolator.cpp       
     src/scene_detector.cpp
     src/ffmpeg_helper.cpp
     src/util.cpp

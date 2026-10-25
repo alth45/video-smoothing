@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>RIFE (AI) — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="rife.html" class="active">rife</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+  <a href="banner.html">banner</a>
+  <a href="termux.html">termux</a>
+  <a href="rife.html"  class="active">rife model</a>
+</nav>
+
+<main>
+  <h1>RIFE (AI Frame Interpolation)</h1>
+  <div class="warn" style="border-left-width: 6px; background: rgba(248,81,73,0.1); border-color: var(--danger);">
+    <strong style="color: var(--danger);">⚠ EXPERIMENTAL — KODE BELUM TERUJI</strong>
+    <p style="margin: 8px 0 0;">
+      Implementasi RIFE ini <strong>belum diuji</strong> oleh developer
+      karena tidak ada hardware GPU tersedia. Kode disertakan sebagai
+      referensi dan siap dipakai, tapi kualitas, stabilitas, dan
+      performa <strong>tidak dijamin</strong>.
+    </p>
+    <p style="margin: 8px 0 0;">
+      Untuk mengaktifkan, wajib pakai flag <code>--ai-experimental</code>.
+      Flag lama <code>--ai</code> sudah deprecated dan akan menolak jalan.
+    </p>
+  </div>
+
+  <p class="lead">
+    <strong>Real-time Intermediate Flow Estimation</strong> — model neural
+    network yang menghasilkan frame interpolasi kualitas sinematik.
+    Jauh lebih halus dari Farneback/DIS untuk gerakan besar dan tepi objek.
+  </p>
+
+  <div class="note">
+    <strong>Butuh model ONNX (~50–80 MB)</strong> yang tidak disertakan.
+    Lihat <code>download-rife.sh</code> untuk cara memperolehnya.
+  </div>
+
+  <h2 id="RifeInterpolator">RifeInterpolator <span class="badge cls">class</span></h2>
+  <div class="signature">RifeInterpolator(const std::string& modelPath, int mult = 2)</div>
+
+  <h3 id="isReady">isReady() / error()</h3>
+  <p>Setelah konstruksi, cek <code>isReady()</code>. Kalau <code>false</code>,
+     <code>error()</code> berisi pesan penyebab (model tidak ada / format salah).</p>
+
+  <h3 id="processPair">processPair()</h3>
+  <div class="signature">std::vector&lt;cv::Mat&gt; processPair(const cv::Mat& prev,
+                                          const cv::Mat& next) override</div>
+  <p>Untuk tiap frame interpolasi <code>t = i/mult</code>, jalankan satu forward
+     pass model dengan input <code>(prev, next, t)</code>.</p>
+
+  <h3>Model yang didukung</h3>
+  <table>
+    <thead><tr><th>Tipe Model</th><th>Input</th><th>mult</th></tr></thead>
+    <tbody>
+      <tr><td>RIFE v4.6 (3-input)</td><td>img0, img1, timestep</td><td>2, 3, 4, …</td></tr>
+      <tr><td>RIFE lain (2-input)</td><td>img0, img1</td><td>2 (t=0.5 only)</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="usage">Cara Pakai</h2>
+<pre><code><span class="tok-com"># Siapkan model</span>
+./download-rife.sh
+
+<span class="tok-com"># Jalankan dengan AI</span>
+./video_flow_smooth -i in.mp4 -o out.mp4 -m 2 --ai
+
+<span class="tok-com"># Custom model path</span>
+./video_flow_smooth -i in.mp4 -o out.mp4 -m 3 --ai --rife-model models/custom.onnx</code></pre>
+
+  <h2 id="perf">Perbandingan Performa (1080p)</h2>
+  <table>
+    <thead><tr><th>Metode</th><th>CPU (i5 modern)</th><th>GPU (RTX 3060)</th></tr></thead>
+    <tbody>
+      <tr><td>Farneback</td><td>~5–10 fps</td><td>—</td></tr>
+      <tr><td>DIS</td><td>~15–25 fps</td><td>—</td></tr>
+      <tr><td><strong>RIFE CPU</strong></td><td>~0.5–1 fps</td><td>—</td></tr>
+      <tr><td><strong>RIFE CUDA</strong></td><td>—</td><td>~5–15 fps</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">
+    <strong>Di Termux/Android tanpa GPU:</strong> RIFE sangat lambat
+    (~0.1–0.2 fps untuk 1080p). Untuk HP, tetap pakai Farneback/DIS dengan
+    <code>--dis</code>. RIFE cocok di desktop dengan GPU NVIDIA.
+  </div>
+
+    <h2 id="experimental">Status Pengujian</h2>
+  <table>
+    <thead><tr><th>Komponen</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Load model ONNX</td><td>⚠ Belum diuji</td></tr>
+      <tr><td>Deteksi input layer otomatis</td><td>⚠ Belum diuji</td></tr>
+      <tr><td>Forward pass model 3-input</td><td>⚠ Belum diuji</td></tr>
+      <tr><td>Forward pass model 2-input (t=0.5)</td><td>⚠ Belum diuji</td></tr>
+      <tr><td>Integrasi dengan pipe ffmpeg</td><td>⚠ Belum diuji</td></tr>
+      <tr><td>Mult > 2 (t-parameterization)</td><td>⚠ Belum diuji</td></tr>
+      <tr><td>CUDA backend</td><td>⚠ Belum diuji (tidak ada GPU)</td></tr>
+      <tr><td>CPU backend</td><td>⚠ Belum diuji</td></tr>
+    </tbody>
+  </table>
+  <p>Kalau kamu menguji dan menemukan bug, laporkan dengan output lengkap
+     + versi OpenCV + model ONNX yang dipakai.</p>
+
+  <h2 id="flags">Flag CLI</h2>
+  <table>
+    <thead><tr><th>Flag</th><th>Fungsi</th></tr></thead>
+    <tbody>
+      <tr><td><code>--ai</code></td><td>❌ <strong>deprecated</strong> — akan error. Pakai <code>--ai-experimental</code></td></tr>
+      <tr><td><code>--ai-experimental</code></td><td>✅ Aktifkan RIFE (dengan peringatan + konfirmasi)</td></tr>
+      <tr><td><code>--ai-ack</code></td><td>Skip konfirmasi prompt (untuk scripting / Termux)</td></tr>
+      <tr><td><code>--rife-model &lt;path&gt;</code></td><td>Path model ONNX (default <code>models/rife.onnx</code>)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Troubleshooting</h2>
+  <table>
+    <thead><tr><th>Error</th><th>Solusi</th></tr></thead>
+    <tbody>
+      <tr><td>"Gagal load model ONNX"</td><td>File rusak / format salah. Pastikan hasil export dari RIFE v4.x</td></tr>
+      <tr><td>"Model tidak punya 2 atau 3 input"</td><td>Input name tidak dikenali. Coba export ulang dengan nama standar (<code>img0, img1, timestep</code>)</td></tr>
+      <tr><td>"Model 2-input hanya mendukung t=0.5"</td><td>Pakai model 3-input (RIFE v4.6) untuk mult > 2</td></tr>
+      <tr><td>"Forward pass gagal saat init"</td><td>Inisialisasi model bermasalah. Cek versi OpenCV (butuh ≥ 4.5)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Dependency</h2>
+  <div class="links">
+    <a href="pipeline.html#run">pipeline.run</a>
+    <a href="flow_interpolator.html">flow_interpolator (implementasi alternatif)</a>
+  </div>
+</main>
+
+<footer>Video Flow Smooth — RIFE</footer>
+</body>
+</html>

@@ -13,6 +13,17 @@ dengan penanganan error yang tangguh dan fallback otomatis saat ada masalah.
 
 ---
 
+> ⚠️ **RIFE AI (EXPERIMENTAL — BELUM TERUJI)**
+>
+> Fitur RIFE AI tersedia lewat flag `--ai-experimental`, tapi **belum
+> diuji oleh developer** karena tidak ada hardware GPU. Kualitas,
+> stabilitas, dan performa **tidak dijamin**.
+>
+> Untuk mode stabil, gunakan default (Farneback) atau `--dis`.
+> Detail lengkap + flag `--ai-ack` untuk scripting di
+> [docs-html/rife.html](docs-html/rife.html).
+---
+
 ## Fitur
 
 ### Inti — Interpolasi Frame
@@ -180,6 +191,10 @@ video_flow_smooth -i <input> -o <output> -m <multiplier> [options]
 | `--no-occlusion`    | Matikan occlusion masking (perilaku lama, lebih cepat)             | *(occlusion aktif)*   |
 | `--no-audio`        | Skip ekstraksi audio / muxing (output video-only)                  | *(audio aktif jika ada)* |
 | `-h`/`--help`       | Tampilkan usage                                                    | —                     |
+| `--ai-experimental` | ⚠ RIFE AI (EXPERIMENTAL — BELUM TERUJI)                            | *(nonaktif)*          |
+| `--ai-ack`          | Skip konfirmasi prompt RIFE (scripting)                            | *(prompt aktif)*      |
+| `--ai`              | ❌ Deprecated — error, pakai `--ai-experimental`                   | —                     |
+| `--rife-model <p>`  | Path model ONNX untuk RIFE                                          | `models/rife.onnx`    |
 
 ### Contoh
 
