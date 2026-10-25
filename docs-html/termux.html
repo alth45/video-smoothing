@@ -100,6 +100,28 @@ cmake --build build --parallel</code></pre>
     </tbody>
   </table>
 
+  <h3>Deteksi otomatis 4K + downscale</h3>
+<p>Kalau input video 4K atau 1440p dan chip tidak sanggup, script
+   otomatis mendeteksi dan (di <code>--exec</code> mode) downscale
+   via ffmpeg sebelum proses.</p>
+
+<table>
+  <thead><tr><th>Tier</th><th>SD/720p</th><th>1080p</th><th>1440p</th><th>4K</th></tr></thead>
+  <tbody>
+    <tr><td>high</td>    <td>✓</td><td>✓</td><td>→ 1080p</td><td>→ 1080p</td></tr>
+    <tr><td>midhigh</td> <td>✓</td><td>✓</td><td>→ 1080p</td><td>→ 1080p</td></tr>
+    <tr><td>mid</td>     <td>✓</td><td>✓</td><td>→ 1080p</td><td>→ 1080p</td></tr>
+    <tr><td>low</td>     <td>✓</td><td>→ 720p</td><td>→ 720p</td><td>→ 720p</td></tr>
+  </tbody>
+</table>
+
+<p>Override:</p>
+<pre><code># Paksa proses native (meski 4K di chip mid)
+./detect-mobile.sh in.mp4 --exec --no-downscale
+
+# Paksa target custom
+./detect-mobile.sh in.mp4 --exec --downscale-to 1280x720</code></pre>
+
   <div class="warn">
     <strong>Out of Memory:</strong> memproses video 4K langsung di Termux
     (>2 GB per frame buffer) biasanya menyebabkan OOM kill oleh Android.

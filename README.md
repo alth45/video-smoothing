@@ -204,7 +204,48 @@ video_flow_smooth -i <input> -o <output> -m <multiplier> [options]
 ```
 
 ---
+# Auto-tune berdasarkan chip
 
+Tidak yakin parameter apa yang cocok untuk HP kamu? Jalankan detector:
+
+```bash
+./detect-mobile.sh                    # tampilkan rekomendasi
+./detect-mobile.sh in.mp4 --exec      # deteksi + langsung proses
+```
+
+**Deteksi 4K otomatis:** kalau input video 4K/1440p dan chip tidak sanggup,
+script otomatis downscale via ffmpeg sebelum proses. Override dengan
+`--no-downscale` (paksa native) atau `--downscale-to 1280x720` (target custom).
+
+Script ini mendeteksi:
+
+- **Chip family & model** (`getprop ro.soc.model` / `ro.board.platform`)
+- **Jumlah core & frekuensi maksimum** (`/proc/cpuinfo`, sysfs)
+- **RAM total** (`/proc/meminfo`)
+
+Lalu mengklasifikasi ke tier (**high / midhigh / mid / low**) dan merekomendasikan flag yang pas — bukan sekadar *"pakai `-m 2` untuk semua"*.
+
+---
+
+<h2 id="auto-tune">Auto-tune dengan <code>detect-mobile.sh</code></h2>
+<p>Script ini mendeteksi chip dan merekomendasikan flag yang pas:</p>
+<pre><code>./detect-mobile.sh                    # lihat rekomendasi
+./detect-mobile.sh in.mp4 --exec      # deteksi + jalankan</code></pre>
+
+<h3>Contoh output</h3>
+<table>
+  <thead>
+    <tr><th>Tier</th><th>Flag rekomendasi</th><th>Video max</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>high (8 Gen 2/3)</td><td><code>-m 3 --dis</code></td><td>1080p native</td></tr>
+    <tr><td>midhigh (7 Gen 2/3)</td><td><code>-m 2 --dis</code></td><td>1080p</td></tr>
+    <tr><td>mid (6xx)</td><td><code>-m 2 --dis</code></td><td>1080p (4K → downscale)</td></tr>
+    <tr><td>low (4xx, Helio)</td><td><code>-m 2 --dis --no-occlusion</code></td><td>720p</td></tr>
+  </tbody>
+</table>
+
+---
 ## Cara Kerja
 
 Tool memproses pasangan frame berurutan dan menyintesis frame baru di antaranya:
