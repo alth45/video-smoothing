@@ -1,5 +1,5 @@
 #include "pipeline.hpp"
-
+#include "banner.hpp"
 #include <iostream>
 #include <string>
 #include <filesystem>
@@ -22,6 +22,7 @@ static void printHelp(const char* argv0) {
 }
 
 int main(int argc, char** argv) {
+    banner::print(); //tampilkan banner
     PipelineOptions opts;
 
     for (int i = 1; i < argc; ++i) {

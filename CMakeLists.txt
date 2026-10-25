@@ -18,6 +18,7 @@ add_executable(video_flow_smooth
     src/scene_detector.cpp
     src/ffmpeg_helper.cpp
     src/util.cpp
+    src/banner.cpp
 )
 target_include_directories(video_flow_smooth PRIVATE src)
 target_link_libraries(video_flow_smooth PRIVATE ${OpenCV_LIBS})

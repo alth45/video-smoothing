@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>banner — Video Flow Smooth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <span class="brand">🎬 Video Flow Smooth</span>
+  <a href="index.html">Overview</a>
+  <a href="main.html">main</a>
+  <a href="pipeline.html">pipeline</a>
+  <a href="flow_interpolator.html">flow_interpolator</a>
+  <a href="scene_detector.html">scene_detector</a>
+  <a href="ffmpeg_helper.html">ffmpeg_helper</a>
+  <a href="util.html">util</a>
+  <a href="banner.html" class="active">banner</a>
+</nav>
+
+<main>
+  <h1>banner</h1>
+  <p class="lead">
+    Modul tampilan. Mencetak ASCII art banner + credit ke stdout saat
+    program dijalankan pertama kali.
+  </p>
+
+  <h2 id="print">banner::print() <span class="badge fn">function</span></h2>
+  <div class="signature">void print()</div>
+  <p>Mencetak ASCII art "Video Smoothing" diikuti baris credit
+     (<em>Powered by OpenCV + FFmpeg · © 2025 Video Flow Smooth</em>).</p>
+
+  <h3>Output di console</h3>
+<pre><code> __   __ _     _                 ____                       _     _
+ \ \ / /(_) __| | ___  ___      / ___| _ __ ___   ___  ___ | |__ (_)_ __   __ _
+  \ V / | |/ _` |/ _ \/ _ \_____\___ \| '_ ` _ \ / _ \/ __|| '_ \| | '_ \ / _` |
+   | || | | (_| |  __/ (_) |_____|___) | | | | | | (_) \__ \| | | | | | | | (_| |
+   |_||_|_|\__,_|\___|\___/     |____/|_| |_| |_|\___/|___/|_| |_|_|_| |_|\__, |
+                                                                          |___/
+                    Video Frame Interpolation Engine
+       Powered by OpenCV + FFmpeg  ·  © 2025 Video Flow Smooth
+       ==========================================================</code></pre>
+
+  <h2>Dependency &amp; Penggunaan</h2>
+  <p>Tidak bergantung ke modul lain. Dipanggil oleh:</p>
+  <div class="links">
+    <a href="main.html#main">main()</a>
+    <span>→ di paling awal, sebelum parsing argumen</span>
+  </div>
+
+  <div class="note">
+    <strong>Kustomisasi:</strong> untuk mengubah teks banner, edit isi
+    <code>R"(...)"</code> di <code>banner.cpp</code>. Untuk tahun otomatis,
+    gunakan <code>&lt;ctime&gt;</code> + <code>localtime_s</code> (Windows) /
+    <code>localtime_r</code> (POSIX).
+  </div>
+</main>
+
+<footer>Video Flow Smooth — banner</footer>
+</body>
+</html>
