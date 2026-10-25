@@ -1,0 +1,63 @@
+# ===========================================================================
+#  General / IDE
+# ===========================================================================
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.pdb
+*.idb
+*.log
+*.tlh
+*.tli
+.options/
+.vscode/
+.idea/
+
+# ===========================================================================
+#  CMake build artefacts
+# ===========================================================================
+# The entire build directory (CMakeCache, generated projects, binaries, DLLs)
+build/
+out/
+
+# CMake-generated cache (just in case build/ is ever partially populated)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# ===========================================================================
+#  Compiled objects & binaries
+# ===========================================================================
+*.obj
+*.o
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.exe
+*.dylib
+
+# ===========================================================================
+#  Runtime output / temporary media
+# ===========================================================================
+# Folders created at runtime by the tool itself
+audio/
+temp/
+
+# Default input/output filenames used by the tool
+/input.mp4
+/output.mp4
+
+# Other generated media (e.g. smoothed 4x output.mp4, smooth.mp4, etc.)
+/*.mp4
+
+# ===========================================================================
+#  Miscellaneous
+# ===========================================================================
+.DS_Store
+Thumbs.db

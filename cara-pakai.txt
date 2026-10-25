@@ -1,0 +1,1 @@
+.\video_flow_smooth.exe -i c:\Users\User\Downloads\konten\konatsu-jj.mp4 -o c:\Users\User\Downloads\konten\konatsu-jj2.mp4 -m 2
