@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Nurhadi
+// SPDX-License-Identifier: MIT
+
 #include "scene_detector.hpp"
 
 using namespace cv;

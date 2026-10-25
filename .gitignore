@@ -52,10 +52,10 @@ temp/
 # Default input/output filenames used by the tool
 /input.mp4
 /output.mp4
-
+/.spdx-backup
 # Other generated media (e.g. smoothed 4x output.mp4, smooth.mp4, etc.)
 /*.mp4
-
+/add-spdx.sh
 # ===========================================================================
 #  Miscellaneous
 # ===========================================================================

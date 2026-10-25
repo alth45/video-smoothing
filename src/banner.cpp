@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Nurhadi
+// SPDX-License-Identifier: MIT
+
 #include "banner.hpp"
 #include <iostream>
 #include <ctime>

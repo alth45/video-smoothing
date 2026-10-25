@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Nurhadi
+// SPDX-License-Identifier: MIT
+
 #include "ffmpeg_helper.hpp"
 
 #include <opencv2/opencv.hpp>

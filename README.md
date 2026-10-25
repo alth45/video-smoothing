@@ -372,7 +372,17 @@ kalau tidak diperlukan).
 
 ---
 
+## Lisensi
 
+Project ini dilisensikan di bawah **MIT License** — bebas dipakai, dimodifikasi,
+dan didistribusikan ulang (termasuk untuk keperluan komersial), selama
+copyright notice asli tetap disertakan.
+
+Lihat file [LICENSE](LICENSE) untuk teks lengkap.
+
+Copyright (c) 2025 **Nurhadi**
+
+---
 
 ## Kontribusi
 

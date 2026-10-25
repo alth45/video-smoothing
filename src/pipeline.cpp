@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Nurhadi
+// SPDX-License-Identifier: MIT
+
 #include "pipeline.hpp"
 #include "ffmpeg_helper.hpp"
 #include "flow_interpolator.hpp"
