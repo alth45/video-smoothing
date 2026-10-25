@@ -372,11 +372,7 @@ kalau tidak diperlukan).
 
 ---
 
-## Lisensi
 
-Project ini disediakan apa adanya untuk penggunaan personal / edukasi.
-
----
 
 ## Kontribusi
 
