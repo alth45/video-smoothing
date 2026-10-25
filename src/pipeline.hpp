@@ -9,8 +9,9 @@ struct PipelineOptions {
     bool        sceneDetect  = true;
     bool        skipAudio    = false;
     double      sceneThresh  = 0.4;
-    bool        useOcclusion = true;    // ← baru
-    float       occlusionThresh = 2.0f; // ← baru (piksel)
+    bool        useOcclusion = true;    
+    float       occlusionThresh = 2.0f; 
+    bool        usePipe      = true;   
 };
 class VideoSmoothingPipeline {
 public:

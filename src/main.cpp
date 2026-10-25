@@ -11,13 +11,15 @@ static void printHelp(const char* argv0) {
     cout << "Usage: " << argv0
          << " -i in.mp4 -o out.mp4 -m <mult>\n"
          << "       [--dis] [--no-scene] [-s <thresh>]\n"
-         << "       [--no-occlusion] [--occ-thresh <px>] [--no-audio]\n"
+         << "       [--no-occlusion] [--occ-thresh <px>]\n"
+         << "       [--no-pipe] [--no-audio]\n"
          << "  -m <n>            : multiplier (2,3,4,...)\n"
          << "  -s <thresh>       : scene-change threshold (0.0-1.0, default 0.4)\n"
          << "  --occ-thresh <px> : occlusion FB-check threshold (default 2.0)\n"
          << "  --dis             : pakai DIS optical flow (lebih cepat)\n"
          << "  --no-scene        : matikan scene-change detection\n"
          << "  --no-occlusion    : matikan occlusion masking\n"
+         << "  --no-pipe         : paksa mode VideoWriter (fallback lama)\n"
          << "  --no-audio        : skip audio (video-only)\n";
 }
 
@@ -36,6 +38,7 @@ int main(int argc, char** argv) {
         else if (arg == "--no-audio")         opts.skipAudio    = true;
         else if (arg == "--occ-thresh" && i + 1 < argc) opts.occlusionThresh = stof(argv[++i]);
         else if (arg == "--no-occlusion")               opts.useOcclusion = false;
+        else if (arg == "--no-pipe")          opts.usePipe      = false;
         else if (arg == "-h" || arg == "--help") {
             printHelp(argv[0]);
             return 0;

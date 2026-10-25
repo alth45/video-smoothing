@@ -40,6 +40,15 @@
     </tbody>
   </table>
 
+  <h2 id="FrameWriter">ffmpeg::FrameWriter <span class="badge cls">class</span></h2>
+    <div class="signature">FrameWriter()
+    bool open(outPath, W, H, fps, audioPath="", crf=18, preset="medium")
+    bool writeFrame(const cv::Mat& frame)
+    bool close()
+    bool isOpen() / std::string lastError()</div>
+    <p>Pipe raw BGR frame ke proses ffmpeg — single-pass encode + mux audio.
+      Menghilangkan file intermediate dan generasi kompresi kedua.</p>
+
   <h2 id="isAvailable">ffmpeg::isAvailable() <span class="badge fn">function</span></h2>
   <div class="signature">bool isAvailable()</div>
   <p>Test cepat apakah <code>ffmpeg</code> ada di PATH. Implementasi: jalankan

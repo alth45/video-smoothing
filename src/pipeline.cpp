@@ -6,6 +6,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <iomanip>
 #include <filesystem>
 #include <chrono>
 #include <algorithm>
@@ -27,7 +28,15 @@ int VideoSmoothingPipeline::run() {
     bool haveFFmpeg = ffmpeg::isAvailable();
     if (!haveFFmpeg) {
         cerr << "WARNING: ffmpeg tidak ditemukan di PATH.\n"
-             << "         Audio TIDAK akan disertakan.\n\n";
+             << "         Audio TIDAK akan disertakan.\n"
+             << "         Mode pipe tidak tersedia — pakai VideoWriter.\n\n";
+    }
+
+    // Mode pipe: hanya kalau ffmpeg ada + ada encoder
+    bool pipeViable = false;
+    if (haveFFmpeg && opts_.usePipe) {
+        pipeViable = ffmpeg::hasEncoder("libx264")
+                  || ffmpeg::hasEncoder("mpeg4");
     }
 
     fs::create_directories("audio");
@@ -58,7 +67,6 @@ int VideoSmoothingPipeline::run() {
 
     // ================= [2/4] Proses video =================
     cout << "[2/4] Proses frame interpolation...\n";
-
     VideoCapture cap(in);
     if (!cap.isOpened()) { cerr << "Tidak bisa buka: " << in << "\n"; return 1; }
 
@@ -67,30 +75,69 @@ int VideoSmoothingPipeline::run() {
     double fps = cap.get(CAP_PROP_FPS);
     if (fps <= 0) fps = 30.0;
 
+    if (W % 2 != 0 || H % 2 != 0) {
+        cerr << "\n  [!!] Dimensi video ganjil (" << W << "x" << H << ").\n"
+             << "  H.264 membutuhkan dimensi genap.\n"
+             << "  Downscale dulu dengan ffmpeg:\n"
+             << "    ffmpeg -i \"" << in
+             << "\" -vf \"pad=ceil(iw/2)*2:ceil(ih/2)*2\" in_even.mp4\n\n";
+        return 1;
+    }
+
     cout << "     Input: " << W << "x" << H << " @ " << fps
          << " fps -> Output: " << fps * mult << " fps\n";
+
     if (opts_.sceneDetect)
         cout << "     Scene detection: ON (threshold=" << opts_.sceneThresh << ")\n";
     else
         cout << "     Scene detection: OFF\n";
+
     if (opts_.useOcclusion)
         cout << "     Occlusion    : ON (thresh=" << opts_.occlusionThresh << " px)\n";
     else
         cout << "     Occlusion    : OFF\n";
 
-    int fourcc = VideoWriter::fourcc('m', 'p', '4', 'v');
-    VideoWriter writer(tempVideo, fourcc, fps * mult, Size(W, H));
-    if (!writer.isOpened()) {
-        tempVideo = "temp/" + stem + "_intermediate.avi";
-        fourcc = VideoWriter::fourcc('M', 'J', 'P', 'G');
-        writer.open(tempVideo, fourcc, fps * mult, Size(W, H));
+    // ---- Siapkan writer: pipe ffmpeg atau fallback VideoWriter ----
+    ffmpeg::FrameWriter pipeWriter;
+    VideoWriter         fileWriter;
+    bool usingPipe = false;
+
+    if (pipeViable) {
+        cout << "     Encoder      : ffmpeg pipe (single-pass H.264)\n";
+        if (pipeWriter.open(out, W, H, fps * mult,
+                            (haveAudio ? audioFile : string()),
+                            18, "medium")) {
+            usingPipe = true;
+        } else {
+            cerr << "     [!!] Gagal membuka pipe ffmpeg: "
+                 << pipeWriter.lastError() << "\n"
+                 << "     Fallback ke VideoWriter + mux terpisah.\n";
+        }
     }
-    if (!writer.isOpened()) { cerr << "Gagal buka VideoWriter\n"; return 1; }
+
+    if (!usingPipe) {
+        cout << "     Encoder      : VideoWriter (temp file, fallback)\n";
+        int fourcc = VideoWriter::fourcc('m', 'p', '4', 'v');
+        fileWriter.open(tempVideo, fourcc, fps * mult, Size(W, H));
+        if (!fileWriter.isOpened()) {
+            tempVideo = "temp/" + stem + "_intermediate.avi";
+            fourcc = VideoWriter::fourcc('M', 'J', 'P', 'G');
+            fileWriter.open(tempVideo, fourcc, fps * mult, Size(W, H));
+        }
+        if (!fileWriter.isOpened()) { cerr << "Gagal buka VideoWriter\n"; return 1; }
+    }
 
     FlowInterpolator interp(mult, 1.5f,
-                        opts_.useFarneback,
-                        opts_.useOcclusion,
-                        opts_.occlusionThresh);
+                            opts_.useFarneback,
+                            opts_.useOcclusion,
+                            opts_.occlusionThresh);
+
+    // Lambda dispatcher: tulis frame ke pipe ATAU file
+    auto emitFrame = [&](const Mat& f) -> bool {
+        if (usingPipe) return pipeWriter.writeFrame(f);
+        fileWriter.write(f);
+        return true;
+    };
 
     Mat prev, next;
     if (!cap.read(prev)) { cerr << "Video kosong\n"; return 1; }
@@ -113,12 +160,32 @@ int VideoSmoothingPipeline::run() {
             printf("\r%*s\r", 78, "");
             printf("     [scene cut @ frame %ld, corr=%.3f]\n", frames, corr);
             reprintBar = true;
-            for (int i = 0; i < mult; ++i) { writer.write(prev); written++; }
+            for (int i = 0; i < mult; ++i) {
+                if (!emitFrame(prev)) {
+                    cerr << "\n  [!!] Gagal menulis frame: "
+                         << pipeWriter.lastError() << "\n";
+                    if (usingPipe) pipeWriter.close();
+                    try { fs::remove(out); } catch (...) {}
+                    return 1;
+                }
+                written++;
+            }
         } else {
             auto outFrames = interp.processPair(prev, next);
-            occlusionRatioSum += interp.lastOcclusionRatio();
-            occlusionPairCount++;
-            for (const auto& f : outFrames) { writer.write(f); written++; }
+            if (opts_.useOcclusion) {
+                occlusionRatioSum += interp.lastOcclusionRatio();
+                occlusionPairCount++;
+            }
+            for (const auto& f : outFrames) {
+                if (!emitFrame(f)) {
+                    cerr << "\n  [!!] Gagal menulis frame: "
+                         << pipeWriter.lastError() << "\n";
+                    if (usingPipe) pipeWriter.close();
+                    try { fs::remove(out); } catch (...) {}
+                    return 1;
+                }
+                written++;
+            }
         }
 
         prev = next.clone();
@@ -143,7 +210,14 @@ int VideoSmoothingPipeline::run() {
             fflush(stdout);
         }
     }
-    writer.write(prev); written++;
+    // frame terakhir
+    if (!emitFrame(prev)) {
+        cerr << "\n  [!!] Gagal menulis frame terakhir.\n";
+        if (usingPipe) pipeWriter.close();
+        try { fs::remove(out); } catch (...) {}
+        return 1;
+    }
+    written++;
 
     double totalElapsed = chrono::duration<double>(
         chrono::steady_clock::now() - procStart).count();
@@ -152,28 +226,44 @@ int VideoSmoothingPipeline::run() {
            frames, formatDuration(totalElapsed).c_str(),
            frames / std::max(totalElapsed, 0.001));
 
-    writer.release();
+    // ---- Tutup writer ----
+    bool encodeOK = true;
+    if (usingPipe) {
+        encodeOK = pipeWriter.close();
+    } else {
+        fileWriter.release();
+    }
+
+    if (!encodeOK) {
+        cerr << "\n  [!!] Encoding video gagal.\n";
+        try { fs::remove(out); } catch (...) {}
+        return 1;
+    }
     cout << "\n";
 
-    // ================= [3/4] Gabung audio =================
-    cout << "[3/4] Gabung audio ke video...\n";
-    bool finalOK = false;
-    if (haveFFmpeg && haveAudio) {
-        finalOK = ffmpeg::muxAudio(tempVideo, audioFile, out);
-        if (!finalOK) {
-            cerr << "     Gagal mux audio, fallback ke video tanpa audio.\n";
-            finalOK = ffmpeg::remuxVideoOnly(tempVideo, out);
-        }
-    } else if (haveFFmpeg) {
-        finalOK = ffmpeg::remuxVideoOnly(tempVideo, out);
+    // ================= [3/4] Finalisasi =================
+    bool finalOK = true;
+    if (usingPipe) {
+        cout << "[3/4] Finalisasi: audio sudah ter-mux dalam single-pass ✓\n";
     } else {
-        try {
-            fs::copy_file(tempVideo, out, fs::copy_options::overwrite_existing);
-            finalOK = true;
-        } catch (...) { finalOK = false; }
+        cout << "[3/4] Gabung audio ke video...\n";
+        if (haveFFmpeg && haveAudio) {
+            finalOK = ffmpeg::muxAudio(tempVideo, audioFile, out);
+            if (!finalOK) {
+                cerr << "     Gagal mux audio, fallback ke video tanpa audio.\n";
+                finalOK = ffmpeg::remuxVideoOnly(tempVideo, out);
+            }
+        } else if (haveFFmpeg) {
+            finalOK = ffmpeg::remuxVideoOnly(tempVideo, out);
+        } else {
+            try {
+                fs::copy_file(tempVideo, out, fs::copy_options::overwrite_existing);
+                finalOK = true;
+            } catch (...) { finalOK = false; }
+        }
+        if (!finalOK) { cerr << "Gagal menghasilkan output final.\n"; return 1; }
+        try { fs::remove(tempVideo); } catch (...) {}
     }
-    if (!finalOK) { cerr << "Gagal menghasilkan output final.\n"; return 1; }
-    try { fs::remove(tempVideo); } catch (...) {}
 
     // ================= [4/4] Info =================
     cout << "\n[4/4] ============ SELESAI ============\n";
@@ -184,16 +274,20 @@ int VideoSmoothingPipeline::run() {
         cout << "     Scene cuts   : " << sceneCuts << " terdeteksi\n";
     else
         cout << "     Scene cuts   : detection dimatikan\n";
-    cout << "     Waktu proses : " << formatDuration(totalElapsed)
-         << " (" << (frames / std::max(totalElapsed, 0.001)) << " fps rata-rata)\n";
     if (opts_.useOcclusion) {
         double avgOccl = (occlusionPairCount > 0)
             ? 100.0 * occlusionRatioSum / occlusionPairCount : 0.0;
         cout << "     Occlusion    : rata-rata " << fixed << setprecision(1)
-            << avgOccl << "% per frame\n" << defaultfloat;
+             << avgOccl << "% per frame\n" << defaultfloat;
     } else {
         cout << "     Occlusion    : detection dimatikan\n";
     }
+    cout << "     Encoding     : "
+         << (usingPipe ? "single-pass (pipe ffmpeg)"
+                       : "two-pass (VideoWriter + ffmpeg mux)")
+         << "\n";
+    cout << "     Waktu proses : " << formatDuration(totalElapsed)
+         << " (" << (frames / std::max(totalElapsed, 0.001)) << " fps rata-rata)\n";
     if (haveAudio) cout << "     Audio        : disertakan (" << audioFile << ")\n";
     else           cout << "     Audio        : tidak ada\n";
     cout << "     File output  : " << out << "\n";
